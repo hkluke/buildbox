@@ -1,0 +1,6 @@
+.env
+buildbox.toml
+buildbox.credentials.toml
+AGENTS.md
+/buildbox
+_design/

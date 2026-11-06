@@ -1,0 +1,111 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - git
+  - keychain
+  - btop
+  - tailscale
+  # What the agent cannot install without sudo: a C toolchain, which Rust,
+  # cgo, native modules, and source builds need, pkg-config, the half of
+  # venv Ubuntu leaves out, and unzip for installers that insist on it.
+  - build-essential
+  - pkg-config
+  - python3-venv
+  - unzip
+  - bubblewrap
+
+  # Rootless Docker for the agent user. slirp4netns gives it networking on
+  # x86 and ARM alike; dbus-user-session lets it apply cgroup limits.
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+  - docker-ce-rootless-extras
+  - uidmap
+  - slirp4netns
+  - dbus-user-session
+
+# Docker's own repo ships the rootless extras and current releases, and
+# Ubuntu's archive has no Tailscale package. Each key is pinned by
+# fingerprint, fetched from the keyserver at boot, and trusted only for
+# its repo.
+apt:
+  sources:
+    docker:
+      source: "deb [signed-by=$KEY_FILE] https://download.docker.com/linux/ubuntu $RELEASE stable"
+      keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+    tailscale:
+      source: "deb [signed-by=$KEY_FILE] https://pkgs.tailscale.com/stable/ubuntu $RELEASE main"
+      keyid: 2596A99EAAB33821893C0A79458CA832957F5868
+
+# Hetzner's vendor-data sets a root password, allows root and password SSH
+# login, and uses chpasswd syntax that makes cloud-init exit with warnings.
+# None of it is wanted here, and without it any warning is a real problem.
+vendor_data:
+  enabled: false
+
+# Hetzner turns on password login when no SSH key is passed to hcloud.
+# OpenSSH is disabled below; this keeps passwords off should it ever return.
+ssh_pwauth: false
+
+# No authorized_keys: logins arrive over Tailscale SSH, which the tailnet
+# policy decides by the connecting device's identity. Nothing on the box
+# can log in to another user, because there is no key to do it with.
+users:
+  - name: admin
+    groups: sudo
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+
+  - name: agent
+    groups: users
+    shell: /bin/bash
+
+# write-files runs before users-groups, so this cannot target the home
+# directory. runcmd appends it after the skel .bashrc exists. DOCKER_HOST is
+# for tools that ignore the docker CLI context, such as Docker SDKs.
+write_files:
+  - path: /var/lib/buildbox/agent.bashrc
+    permissions: "0644"
+    content: |
+      eval $(keychain --eval --agents ssh id_ed25519)
+      export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+
+runcmd:
+  # Without --ssh-key, Hetzner sets a root password and prints/emails it.
+  # Locking it makes those copies useless without asking for a Hetzner key.
+  - ['passwd', '--lock', 'root']
+  # Tailscale. Its package starts tailscaled, so up needs no service step.
+  # The tag makes the box the tag's device rather than the user's, so no rule
+  # about the user's devices applies to it; a key without the tag is refused
+  # here. Auto-update keeps a long-lived box on a current client.
+  - ['tailscale', 'up', '--auth-key=tskey-auth-SAMPLE', '--ssh', '--advertise-tags=tag:buildbox', '--hostname=build-x']
+  - ['tailscale', 'set', '--auto-update']
+  # Tailscale SSH answers port 22 on the tailnet and the firewall admits
+  # nothing else, so OpenSSH would only ever serve loopback. Off.
+  - ['systemctl', 'disable', '--now', 'ssh.socket', 'ssh.service']
+  # Host-level lockdown
+  - ['ufw', 'default', 'deny', 'incoming']
+  - ['ufw', 'default', 'allow', 'outgoing']
+  - ['ufw', 'allow', 'in', 'on', 'tailscale0']
+  - ['ufw', '--force', 'enable']
+  # Projects directory for agent
+  - ['mkdir', '-p', '/home/agent/projects']
+  - ['chown', 'agent:agent', '/home/agent/projects']
+  - ['sh', '-c', 'cat /var/lib/buildbox/agent.bashrc >> /home/agent/.bashrc']
+  - ['chown', 'agent:agent', '/home/agent/.bashrc']
+  # Rootless Docker for the agent user. The packages start a root daemon;
+  # stop it so the only Docker on the box runs as the agent user.
+  - ['systemctl', 'disable', '--now', 'docker.service', 'docker.socket', 'containerd.service']
+  - ['rm', '-f', '/var/run/docker.sock']
+  # Linger keeps the agent's user manager, and its Docker daemon, running
+  # without a login. The setup tool needs that manager to be up.
+  - ['loginctl', 'enable-linger', 'agent']
+  - ['sh', '-c', 'systemctl start user@$(id -u agent).service']
+  - ['runuser', '-l', 'agent', '-c', 'XDG_RUNTIME_DIR=/run/user/$(id -u) dockerd-rootless-setuptool.sh install']
+  # Claude Code for the agent user
+  - ['su', '-', 'agent', '-c', 'curl -fsSL https://claude.ai/install.sh | bash']
+  # Codex for the agent user
+  - ['su', '-', 'agent', '-c', 'curl -fsSL https://chatgpt.com/codex/install.sh | sh']

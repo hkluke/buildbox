@@ -1,0 +1,28 @@
+#!/bin/sh
+# Reject a commit that does not compile or does not pass the linters.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if [ -d "$HOME/.local/go/bin" ]; then
+  PATH="$HOME/.local/go/bin:$PATH"
+fi
+if [ -d "$HOME/go/bin" ]; then
+  PATH="$HOME/go/bin:$PATH"
+fi
+export PATH
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "pre-commit: go is not installed" >&2
+  exit 1
+fi
+
+if ! command -v golangci-lint >/dev/null 2>&1; then
+  echo "pre-commit: golangci-lint is not installed" >&2
+  echo "pre-commit: install v2.15.0 into \$PATH or \$HOME/go/bin" >&2
+  exit 1
+fi
+
+echo "pre-commit: make check"
+make check

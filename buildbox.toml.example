@@ -1,0 +1,29 @@
+# buildbox config. Rewrite it with: buildbox init
+
+# Boxes join the tailnet with this tag, and the tailnet policy names it.
+# The OAuth client that mints their auth keys lives in
+# buildbox.credentials.toml beside this file, which init writes. Without
+# one, create asks for a key.
+[tailscale]
+tag = "tag:buildbox"
+
+# Git identity, and the key copied to the agent after boot.
+# $HOME and ~/ are expanded when the file is read.
+[git]
+ssh_key = "$HOME/.ssh/buildbox_git_ed25519"
+name = "Your Name"
+email = "you@example.com"
+
+# The Hetzner server.
+[hetzner]
+firewall = "buildbox-tailscale-only"
+type = "cx23"
+image = "ubuntu-26.04"  # an Ubuntu release; init lists the ones Hetzner offers
+location = "fsn1"
+
+# Coding tools installed for the agent user.
+[tools]
+opencode = true
+claude = false
+grok = false
+codex = false

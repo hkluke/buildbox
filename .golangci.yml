@@ -1,0 +1,45 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: all
+  disable:
+    # These linters only report useful findings with a hand-written policy.
+    - depguard
+    - forbidigo
+    - goheader
+    - gomoddirectives
+    - gomodguard_v2
+    - importas
+    # They apply to databases, test libraries, or other products.
+    - arangolint
+    - clickhouselint
+    - ginkgolinter
+    - rowserrcheck
+    - sqlclosecheck
+    - testifylint
+    # hcloud option structs are external and are not filled field by field.
+    - exhaustruct
+    - exhaustruct_v5
+    # Deprecated duplicates of wsl_v5 and gomodguard_v2.
+    - gomodguard
+    - wsl
+    # A small CLI returns concrete types and the error interface.
+    - ireturn
+    - nilnil
+    # Tests sit in the package they test, so they can check unexported helpers.
+    - testpackage
+
+  settings:
+    wrapcheck:
+      # Internal packages return abort errors that are already worded for the
+      # user. Wrapping them would only change the message.
+      ignore-package-globs:
+        - github.com/hkluke/buildbox/internal/*
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
