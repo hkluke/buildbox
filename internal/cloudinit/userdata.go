@@ -14,6 +14,17 @@ import (
 const userDataTemplate = `#cloud-config
 package_update: true
 package_upgrade: true
+# A kernel from the upgrade only runs after a reboot, and a local root hole
+# on the box is the agent user's. Ubuntu raises /run/reboot-required when a
+# package needs one; the reboot lands here, before runcmd, so the box joins
+# the tailnet on its final kernel. /run is empty again on the second boot.
+package_reboot_if_required: true
+# Hetzner's datasource refreshes the network config on every boot over the
+# interface name it saw first, which netplan renames, so a second boot waits
+# 30 s for a lease and fails. Nothing changes a box's network after it exists.
+updates:
+  network:
+    when: [boot-new-instance]
 packages:
   - git
   - keychain

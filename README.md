@@ -82,6 +82,8 @@ Each box:
 - has no OpenSSH: you log in through Tailscale SSH. `ssh dev` works where you
   ran create, and `ssh agent@dev` from any of your devices
 - runs Ubuntu with two users, `agent` and `admin`
+- boots with every package update applied, rebooting first when one asks
+  for it, so it joins the tailnet on its final kernel
 
 The coding agent works as `agent`, which has no sudo. It gets rootless Docker,
 your Git key, and the coding tools you chose. The tools are installed but not

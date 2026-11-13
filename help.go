@@ -336,9 +336,11 @@ The Hetzner firewall must allow only inbound UDP 41641. The box joins the
 tailnet with a one-time auth key carrying the tag from the config, which
 buildbox mints when an OAuth client is configured and asks for otherwise.
 Logins are decided by your tailnet policy: when it has no rule for the
-box yet, create shows the rule and waits for you to add it. After
-cloud-init finishes, buildbox checks rootless Docker, copies the Git SSH
-key, and records the host key.
+box yet, create shows the rule and waits for you to add it. cloud-init
+upgrades every package first and reboots the box when one asks for it,
+so the box joins the tailnet on its final kernel. After cloud-init
+finishes, buildbox checks rootless Docker, copies the Git SSH key, and
+records the host key.
 
 Flags:
       --name NAME   Server name, the same as NAME. Lowercase letters,
