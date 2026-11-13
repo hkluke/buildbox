@@ -45,8 +45,9 @@ func TestRenderUserDataInstallsChosenTools(t *testing.T) {
 	assertToolLines(t, legacy, config.ToolOpenCode)
 }
 
-// The four packages are what the agent cannot install without sudo.
-func TestUserDataInstallsAToolchain(t *testing.T) {
+// The reboot and the kept network config are explained in the document;
+// the four packages are what the agent cannot install without sudo.
+func TestUserDataBootsUpdatedWithAToolchain(t *testing.T) {
 	t.Parallel()
 
 	doc, err := Render(config.Config{Tag: config.DefaultTag}, "build-x", "tskey-auth-SAMPLE")
@@ -56,6 +57,8 @@ func TestUserDataInstallsAToolchain(t *testing.T) {
 
 	for _, want := range []string{
 		"package_upgrade: true\n",
+		"package_reboot_if_required: true\n",
+		"updates:\n  network:\n    when: [boot-new-instance]\n",
 		"  - build-essential\n",
 		"  - pkg-config\n",
 		"  - python3-venv\n",
