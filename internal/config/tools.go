@@ -8,11 +8,12 @@ import (
 
 // IDs of the coding tools, as written in AITools and in the [tools] table.
 const (
-	ToolGrok     = "grok"
-	ToolClaude   = "claude"
-	ToolCodex    = "codex"
-	ToolOpenCode = "opencode"
-	ToolNone     = "none"
+	ToolGrok        = "grok"
+	ToolClaude      = "claude"
+	ToolCodex       = "codex"
+	ToolOpenCode    = "opencode"
+	ToolAntigravity = "antigravity"
+	ToolNone        = "none"
 )
 
 // Tool is one CLI installed for the agent user. Command is the upstream
@@ -30,6 +31,7 @@ func Tools() []Tool {
 		{ToolClaude, "Claude Code", "curl -fsSL https://claude.ai/install.sh | bash"},
 		{ToolGrok, "Grok Build", "curl -fsSL https://x.ai/cli/install.sh | bash"},
 		{ToolCodex, "Codex", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"},
+		{ToolAntigravity, "Antigravity CLI", "curl -fsSL https://antigravity.google/cli/install.sh | bash"},
 	}
 }
 
@@ -109,10 +111,11 @@ func codingToolsFromTable(tools *tomlTools) string {
 	}
 
 	set := map[string]bool{
-		ToolGrok:     tools.Grok,
-		ToolClaude:   tools.Claude,
-		ToolCodex:    tools.Codex,
-		ToolOpenCode: tools.OpenCode,
+		ToolGrok:        tools.Grok,
+		ToolClaude:      tools.Claude,
+		ToolCodex:       tools.Codex,
+		ToolOpenCode:    tools.OpenCode,
+		ToolAntigravity: tools.Antigravity,
 	}
 
 	return joinCodingTools(set)

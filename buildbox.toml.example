@@ -27,3 +27,4 @@ opencode = true
 claude = false
 grok = false
 codex = false
+antigravity = false

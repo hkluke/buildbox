@@ -67,6 +67,34 @@ func TestRenderConfigWritesCodingTools(t *testing.T) {
 	}
 }
 
+// A flag that is written but not read back, or read but not written, loses
+// the choice on the next init. Every tool has to survive the round trip.
+func TestEveryCodingToolSurvivesTheConfigFile(t *testing.T) {
+	t.Parallel()
+
+	for _, tool := range Tools() {
+		t.Run(tool.ID, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "buildbox.toml")
+
+			err := os.WriteFile(path, []byte(Render(Config{AITools: tool.ID})), ConfigPerm)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := LoadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if cfg.AITools != tool.ID {
+				t.Fatalf("tools %q, want %q", cfg.AITools, tool.ID)
+			}
+		})
+	}
+}
+
 func TestLoadConfigExpandsPathsAndTools(t *testing.T) {
 	t.Parallel()
 

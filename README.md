@@ -19,10 +19,10 @@
 buildbox gives a coding agent a machine of its own. One command creates a VPS
 on Hetzner Cloud, joins it to your tailnet, and sets up an unprivileged `agent`
 user with rootless Docker, Git access, and the coding CLIs you choose, such as
-OpenCode, Claude Code, Codex, or Grok Build. The server accepts no traffic from
-the internet except Tailscale's. You connect with `ssh <name>`, and `scp`,
-`rsync`, and remote-SSH editors work the same way. `buildbox delete <name>`
-throws it away.
+OpenCode, Claude Code, Codex, Grok Build, or Antigravity CLI. The server
+accepts no traffic from the internet except Tailscale's. You connect with
+`ssh <name>`, and `scp`, `rsync`, and remote-SSH editors work the same way.
+`buildbox delete <name>` throws it away.
 
 - **The agent stays off your laptop.** It works on its own server, and your
   files, browser sessions, and cloud credentials are out of its reach.

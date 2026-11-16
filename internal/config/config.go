@@ -250,10 +250,11 @@ type tomlTailscale struct {
 }
 
 type tomlTools struct {
-	Grok     bool `toml:"grok"`
-	Claude   bool `toml:"claude"`
-	Codex    bool `toml:"codex"`
-	OpenCode bool `toml:"opencode"`
+	Grok        bool `toml:"grok"`
+	Claude      bool `toml:"claude"`
+	Codex       bool `toml:"codex"`
+	OpenCode    bool `toml:"opencode"`
+	Antigravity bool `toml:"antigravity"`
 }
 
 // tomlCredentials is the credentials file: the OAuth client alone, so the

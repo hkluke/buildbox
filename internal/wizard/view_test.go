@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -143,14 +144,18 @@ func TestCodingToolStepTogglesTheRecommendedTool(t *testing.T) {
 		toolUnchecked+" Claude Code",
 		toolUnchecked+" Grok Build",
 		toolUnchecked+" Codex",
+		toolUnchecked+" Antigravity CLI",
 	)
 
-	openAt := strings.Index(view, "OpenCode")
-	claudeAt := strings.Index(view, "Claude Code")
-	grokAt := strings.Index(view, "Grok Build")
-	codexAt := strings.Index(view, "Codex")
+	order := []int{
+		strings.Index(view, "OpenCode"),
+		strings.Index(view, "Claude Code"),
+		strings.Index(view, "Grok Build"),
+		strings.Index(view, "Codex"),
+		strings.Index(view, "Antigravity CLI"),
+	}
 
-	if openAt > claudeAt || claudeAt > grokAt || grokAt > codexAt {
+	if !slices.IsSorted(order) {
 		t.Fatalf("tool order:\n%s", view)
 	}
 

@@ -48,6 +48,7 @@ func Render(cfg Config) string {
 		"claude = " + tomlBool(ToolEnabled(cfg.AITools, ToolClaude)),
 		"grok = " + tomlBool(ToolEnabled(cfg.AITools, ToolGrok)),
 		"codex = " + tomlBool(ToolEnabled(cfg.AITools, ToolCodex)),
+		"antigravity = " + tomlBool(ToolEnabled(cfg.AITools, ToolAntigravity)),
 	}
 
 	return strings.Join(lines, "\n") + "\n"

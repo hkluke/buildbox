@@ -22,6 +22,7 @@ func TestUserDataMatchesGolden(t *testing.T) {
 	}{
 		{"default", ""},
 		{"codex-claude", config.ToolCodex + " " + config.ToolClaude},
+		{"antigravity", config.ToolAntigravity},
 		{"none", config.ToolNone},
 	} {
 		t.Run(check.name, func(t *testing.T) {
