@@ -109,7 +109,7 @@ func TestAntigravityInstallsItsAppArmorProfile(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"  - path: " + antigravityProfileStaged + "\n",
+		"  - path: /etc/apparmor.d/agy\n",
 		"      profile agy /home/" + config.AgentUser + "/.local/bin/agy flags=(unconfined) {\n",
 		"        userns,\n",
 	} {
@@ -118,7 +118,7 @@ func TestAntigravityInstallsItsAppArmorProfile(t *testing.T) {
 		}
 	}
 
-	loadAt := strings.Index(with, "apparmor_parser --replace "+antigravityProfileStaged)
+	loadAt := strings.Index(with, "  - ['apparmor_parser', '--replace', '/etc/apparmor.d/agy']\n")
 	installAt := strings.Index(with, "antigravity.google/cli/install.sh")
 
 	if loadAt < 0 || installAt < loadAt {

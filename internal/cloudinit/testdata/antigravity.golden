@@ -100,8 +100,8 @@ write_files:
   # without an AppArmor profile that allows them. This profile confines
   # nothing and allows only that, the shape Ubuntu ships for rootlesskit.
   # agy sits in the agent's home, so in effect the agent user gets them,
-  # which rootlesskit already gives it. runcmd puts the profile in place.
-  - path: /var/lib/buildbox/agy.apparmor
+  # which rootlesskit already gives it. runcmd loads the profile.
+  - path: /etc/apparmor.d/agy
     permissions: "0644"
     content: |
       abi <abi/5.0>,
@@ -153,9 +153,9 @@ runcmd:
   - ['loginctl', 'enable-linger', 'agent']
   - ['sh', '-c', 'systemctl start user@$(id -u agent).service']
   - ['runuser', '-l', 'agent', '-c', 'XDG_RUNTIME_DIR=/run/user/$(id -u) dockerd-rootless-setuptool.sh install']
-  # agy's AppArmor profile, before agy first runs. It stays for later boots
-  # only when this release could load it: an older AppArmor cannot read it,
-  # and everything in /etc/apparmor.d is loaded at every boot.
-  - ['sh', '-c', 'if apparmor_parser --replace /var/lib/buildbox/agy.apparmor; then install --mode=0644 /var/lib/buildbox/agy.apparmor /etc/apparmor.d/agy; fi']
+  # agy's AppArmor profile, before agy first runs. AppArmor reads
+  # /etc/apparmor.d only at boot, so a box that did not reboot would not have
+  # it. Replace, not add: a box that did reboot has it loaded already.
+  - ['apparmor_parser', '--replace', '/etc/apparmor.d/agy']
   # Antigravity CLI for the agent user
   - ['su', '-', 'agent', '-c', 'curl -fsSL https://antigravity.google/cli/install.sh | bash']

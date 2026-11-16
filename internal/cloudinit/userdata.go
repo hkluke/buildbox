@@ -177,9 +177,9 @@ func Render(cfg config.Config, name, authKey string) (string, error) {
 	).Replace(userDataDocument(codingToolLines(tools))), nil
 }
 
-// antigravityProfileStaged is where agy's AppArmor profile waits until runcmd
-// has seen that this release can load it.
-const antigravityProfileStaged = "/var/lib/buildbox/agy.apparmor"
+// antigravityProfilePath is agy's AppArmor profile, among the ones AppArmor
+// loads at every boot.
+const antigravityProfilePath = "/etc/apparmor.d/agy"
 
 // antigravityProfile is the write_files entry for agy's AppArmor profile. The
 // replacer does not read its own output, so the agent user is written in here
@@ -194,8 +194,8 @@ func antigravityProfile(ids []string) string {
   # without an AppArmor profile that allows them. This profile confines
   # nothing and allows only that, the shape Ubuntu ships for rootlesskit.
   # agy sits in the agent's home, so in effect the agent user gets them,
-  # which rootlesskit already gives it. runcmd puts the profile in place.
-  - path: ` + antigravityProfileStaged + `
+  # which rootlesskit already gives it. runcmd loads the profile.
+  - path: ` + antigravityProfilePath + `
     permissions: "0644"
     content: |
       abi <abi/5.0>,
@@ -210,11 +210,10 @@ func antigravityProfile(ids []string) string {
 
 // antigravityProfileLoad is the runcmd entry that loads the profile. It goes
 // before agy's installer, so agy never runs without it.
-const antigravityProfileLoad = `  # agy's AppArmor profile, before agy first runs. It stays for later boots
-  # only when this release could load it: an older AppArmor cannot read it,
-  # and everything in /etc/apparmor.d is loaded at every boot.
-  - ['sh', '-c', 'if apparmor_parser --replace ` + antigravityProfileStaged + `; ` +
-	`then install --mode=0644 ` + antigravityProfileStaged + ` /etc/apparmor.d/agy; fi']
+const antigravityProfileLoad = `  # agy's AppArmor profile, before agy first runs. AppArmor reads
+  # /etc/apparmor.d only at boot, so a box that did not reboot would not have
+  # it. Replace, not add: a box that did reboot has it loaded already.
+  - ['apparmor_parser', '--replace', '` + antigravityProfilePath + `']
 `
 
 // codexPackages is the apt entry for bubblewrap. Codex sandboxes its commands
