@@ -81,7 +81,7 @@ Each box:
   firewall on the box
 - has no OpenSSH: you log in through Tailscale SSH. `ssh dev` works where you
   ran create, and `ssh agent@dev` from any of your devices
-- runs Ubuntu with two users, `agent` and `admin`
+- runs Ubuntu 26.04 LTS with two users, `agent` and `admin`
 - boots with every package update applied, rebooting first when one asks
   for it, so it joins the tailnet on its final kernel
 
@@ -185,6 +185,11 @@ to `credentials.toml` beside it with mode 0600. The config holds no secret, so
 it can live in a dotfiles repository.
 [`buildbox.toml.example`](buildbox.toml.example) is a complete, commented
 config, and `buildbox help` lists the environment variables that override it.
+
+The Ubuntu release is not in the config. Every box runs the one LTS release
+buildbox is tested on, so what this page says about a box holds for every box.
+A config from an earlier buildbox that names another release is refused, and
+`buildbox init` writes it again without that line.
 
 While it loads, `init` asks the Go module proxy whether a newer buildbox has
 been released, and if so shows the command that installs it. Set

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -24,17 +25,17 @@ const ProjectCredentialsName = "buildbox.credentials.toml"
 
 // Values init offers when the config does not set them.
 const (
-	DefaultImage = "ubuntu-26.04"
 	SeedLocation = "fsn1"
 	DefaultType  = "cx23"
 	DefaultTag   = "tag:buildbox"
 )
 
-// ImagePrefix starts the name of every image buildbox can provision: the
-// cloud-init document is written for Ubuntu, and any other image boots a
-// server that never joins the tailnet. The release after the prefix is
-// Hetzner's to judge.
-const ImagePrefix = "ubuntu-"
+// Image is the one image every box boots. buildbox supports a single Ubuntu
+// LTS at a time, the one its cloud-init document and every guarantee it makes
+// are checked on, on a real box. It is not a setting, because a second value
+// would be a release nobody tested. Moving to the next LTS is a change to
+// this constant, made after that check.
+const Image = "ubuntu-26.04"
 
 // The two users on every box. Both are fixed: the tailnet policy's ssh rule
 // names them, and a name that could change would leave every tailnet with a
@@ -75,7 +76,6 @@ type Config struct {
 	GitUserEmail      string
 	FirewallName      string
 	ServerType        string
-	ServerImage       string
 	ServerLoc         string
 	AITools           string
 	Tag               string
@@ -191,7 +191,6 @@ func (cfg Config) RequireCreate() error {
 		{configKeyGitUserEmail, cfg.GitUserEmail},
 		{configKeyFirewallName, cfg.FirewallName},
 		{configKeyServerType, cfg.ServerType},
-		{configKeyServerImage, cfg.ServerImage},
 		{configKeyServerLoc, cfg.ServerLoc},
 		{configKeyTag, cfg.Tag},
 	}
@@ -207,14 +206,6 @@ func (cfg Config) RequireCreate() error {
 
 	if problem := InvalidTag(cfg.Tag); problem != "" {
 		return abort.New(configKeyTag + ": " + problem)
-	}
-
-	if problem := InvalidImage(cfg.ServerImage); problem != "" {
-		return abort.Hint(
-			configKeyServerImage+": "+strings.TrimSuffix(problem, "."),
-			"",
-			"Pick one with:\n"+abort.Indent+abort.Prog()+" init",
-		)
 	}
 
 	_, err := ParseTools(cfg.AITools)
@@ -241,8 +232,12 @@ type tomlGit struct {
 type tomlHetzner struct {
 	Firewall string `toml:"firewall"`
 	Type     string `toml:"type"`
-	Image    string `toml:"image"`
 	Location string `toml:"location"`
+	// Image is a retired key. The image stopped being a setting when buildbox
+	// settled on one release, and the field is here only so that a file
+	// written before then still loads: nothing reads it but retiredImage. It
+	// goes when Image next moves.
+	Image string `toml:"image"`
 }
 
 type tomlTailscale struct {
@@ -270,7 +265,8 @@ type tomlCredentialsTailscale struct {
 
 // LoadFile reads the config at path and the credentials file beside it, and
 // rejects keys it does not know, so a typo fails loudly instead of being
-// ignored.
+// ignored. It also refuses a file that still asks for an image other than
+// Image.
 func LoadFile(path string) (Config, error) {
 	return load(path, true)
 }
@@ -288,6 +284,15 @@ func load(path string, strict bool) (Config, error) {
 	err := decodeFile(path, strict, &decoded)
 	if err != nil {
 		return Config{}, err
+	}
+
+	// init reads leniently and writes the file again without the key, so
+	// only a strict read, which is create's, has to refuse another image.
+	if strict {
+		err = retiredImage(path, decoded.Hetzner.Image)
+		if err != nil {
+			return Config{}, err
+		}
 	}
 
 	cfg, err := readCredentials(CredentialsPath(path), strict, configFromTOML(decoded))
@@ -325,6 +330,22 @@ func readCredentials(path string, strict bool, cfg Config) (Config, error) {
 	return cfg, nil
 }
 
+// retiredImage refuses a config that still asks for an image other than
+// Image. Booting Image in its place would be a default the file never asked
+// for, so this stops before any server exists.
+func retiredImage(path, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || value == Image {
+		return nil
+	}
+
+	return abort.Hint(
+		configKeyServerImage+" is "+strconv.Quote(value)+", but every box runs "+Image,
+		"The image is no longer a setting.",
+		"Remove the line from "+path+", or run this and choose Write:\n"+abort.Indent+abort.Prog()+" init",
+	)
+}
+
 func decodeFile(path string, strict bool, into any) error {
 	raw, err := os.ReadFile(path) // #nosec G304 -- the path is a config file chosen by File or init.
 	if err != nil {
@@ -356,7 +377,6 @@ func configFromTOML(decoded tomlConfig) Config {
 		GitUserEmail:  decoded.Git.Email,
 		FirewallName:  decoded.Hetzner.Firewall,
 		ServerType:    decoded.Hetzner.Type,
-		ServerImage:   decoded.Hetzner.Image,
 		ServerLoc:     decoded.Hetzner.Location,
 		AITools:       codingToolsFromTable(decoded.Tools),
 		Tag:           decoded.Tailscale.Tag,

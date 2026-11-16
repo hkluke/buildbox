@@ -16,7 +16,7 @@ const (
 	welcomeWidth  = 100
 	welcomeHeight = 40
 	cubeRow       = "████████████████████"
-	railAtStart   = "Box ●○○ · Agent ○○○ · Tailnet ○○○"
+	railAtStart   = "Box ●○ · Agent ○○○ · Tailnet ○○○"
 )
 
 // firstRun is a first run with the catalog in and the logo past its hold:
@@ -79,8 +79,7 @@ func reviewed(t *testing.T) Model {
 
 	box, _ := firstRun(t, agentSeed(t)).begin()
 	machine, _ := box.advance()
-	image, _ := machine.advance()
-	agent, _ := image.advance()
+	agent, _ := machine.advance()
 	identity, _ := agent.advance()
 	tools, _ := identity.advance()
 
@@ -202,26 +201,26 @@ func TestFirstRunWalksTheSectionsInOrder(t *testing.T) {
 	expectStep(t, box, stepLocation, railAtStart)
 
 	machine, _ := box.advance()
-	image, _ := machine.advance()
+	expectStep(t, machine, stepMachine, "Box ●● · Agent ○○○ · Tailnet ○○○")
 
 	// Box's last step leads to Agent's first, and esc there leads back.
-	agent, _ := image.advance()
-	expectStep(t, agent, stepGitKey, "Box ●●● · Agent ●○○ · Tailnet ○○○")
+	agent, _ := machine.advance()
+	expectStep(t, agent, stepGitKey, "Box ●● · Agent ●○○ · Tailnet ○○○")
 
 	back, _ := agent.back()
-	expectStep(t, back, stepImage, "Box ●●● · Agent ○○○ · Tailnet ○○○")
+	expectStep(t, back, stepMachine, "Box ●● · Agent ○○○ · Tailnet ○○○")
 
 	identity, _ := agent.advance()
 	tools, _ := identity.advance()
 
 	tailnet, _ := tools.advance()
-	expectStep(t, tailnet, stepAccess, "Box ●●● · Agent ●●● · Tailnet ●○○")
+	expectStep(t, tailnet, stepAccess, "Box ●● · Agent ●●● · Tailnet ●○○")
 
 	// The tailnet's dots follow its choices.
 	tailnet.accessChoice = accessManual
 
 	policy, _ := tailnet.advance()
-	expectStep(t, policy, stepPolicy, "Box ●●● · Agent ●●● · Tailnet ●●○○○")
+	expectStep(t, policy, stepPolicy, "Box ●● · Agent ●●● · Tailnet ●●○○○")
 }
 
 func TestTheLastSectionEndsOnTheReview(t *testing.T) {
@@ -245,10 +244,10 @@ func TestTheLastSectionEndsOnTheReview(t *testing.T) {
 
 	again, _ := hub.onHub(enterKey())
 	expectStep(t, again, stepLocation, "")
-	assertViewContains(t, stripANSI(again.View()), "Box · 1 of 3")
+	assertViewContains(t, stripANSI(again.View()), "Box · 1 of 2")
 
 	again, _ = again.advance()
-	again, _ = again.advance()
+	expectStep(t, again, stepMachine, "")
 
 	last, _ := again.advance()
 	expectStep(t, last, stepHub, "")
@@ -286,11 +285,10 @@ func TestFirstRunSkipsATailnetSetUpBefore(t *testing.T) {
 	assertViewContains(t, stripANSI(welcome.View()), "OAuth client from an earlier run, still valid", "skipped")
 
 	box, _ := welcome.begin()
-	expectStep(t, box, stepLocation, "Box ●○○ · Agent ○○○ · Tailnet "+okMark)
+	expectStep(t, box, stepLocation, "Box ●○ · Agent ○○○ · Tailnet "+okMark)
 
 	machine, _ := box.advance()
-	image, _ := machine.advance()
-	agent, _ := image.advance()
+	agent, _ := machine.advance()
 	identity, _ := agent.advance()
 	tools, _ := identity.advance()
 

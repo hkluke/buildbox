@@ -65,7 +65,7 @@ func (wiz Model) stepPage() string {
 		return tailscale.KeysURL
 	case stepOAuthID:
 		return tailscale.OAuthURL
-	case stepLoad, stepHub, stepLocation, stepMachine, stepImage, stepGitKey, stepGitIdentity, stepTools,
+	case stepLoad, stepHub, stepLocation, stepMachine, stepGitKey, stepGitIdentity, stepTools,
 		stepAccess, stepPreview, stepPolicy, stepKeys, stepOAuthSecret:
 		return ""
 	default:

@@ -162,7 +162,6 @@ func TestRenderConfigQuotesAndWritesTheTailscaleSection(t *testing.T) {
 		GitUserEmail:      "ada@example.com",
 		FirewallName:      "buildbox-tailscale-only",
 		ServerType:        DefaultType,
-		ServerImage:       DefaultImage,
 		ServerLoc:         SeedLocation,
 		Tag:               DefaultTag,
 		OAuthClientID:     "k123",

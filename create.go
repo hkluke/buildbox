@@ -123,7 +123,7 @@ func prepareCreate(ctx context.Context, args []string) (createPlan, error) {
 	}
 
 	con := console.New()
-	con.Header(cmdCreate, name, cfg.ServerType, cfg.ServerLoc, cfg.ServerImage)
+	con.Header(cmdCreate, name, cfg.ServerType, cfg.ServerLoc, config.Image)
 
 	plan, err := authorizeCreate(ctx, con, name, cfg, paths)
 	plan.ssh = paths

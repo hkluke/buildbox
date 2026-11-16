@@ -391,10 +391,6 @@ func fillInitDefaults(ctx context.Context, cfg config.Config) config.Config {
 
 	cfg = defaultCodingTools(cfg)
 
-	if cfg.ServerImage == "" {
-		cfg.ServerImage = config.DefaultImage
-	}
-
 	if cfg.ServerLoc == "" {
 		cfg.ServerLoc = config.SeedLocation
 	}

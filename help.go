@@ -286,15 +286,16 @@ Flags:
 Environment:
   %[5]s  Set to any value to skip the check for a newer release.
 `, abort.Prog(), hetzner.FirewallName, hetzner.TailscaleUDPPort, config.DefaultTag, release.OptOut,
-		fmt.Sprintf(initSectionsHelp, config.DefaultTag))
+		fmt.Sprintf(initSectionsHelp, config.DefaultTag, config.Image))
 }
 
 // initSectionsHelp describes init's three sections, in the order a first
 // run meets them.
-const initSectionsHelp = `Box is the location, the server type, and the image. A terminal with room
-shows the locations on a world map, where left and right move west and
-east. Server types are listed for the location you choose, with the hourly
-price Hetzner bills and the monthly cap, gross.
+const initSectionsHelp = `Box is the location and the server type. A terminal with room shows the
+locations on a world map, where left and right move west and east. Server
+types are listed for the location you choose, with the hourly price Hetzner
+bills and the monthly cap, gross. Every box boots %[2]s, which is
+not a setting.
 
 Agent is the Git key, the Git identity, and the coding tools. The Git key
 is a new ed25519 key, a key already on this machine, or a path you type. A

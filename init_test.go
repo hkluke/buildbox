@@ -18,7 +18,11 @@ func TestInitSeedReadsAnOlderConfig(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "config.toml")
 
-	err := os.WriteFile(path, []byte("[ssh]\npubkey = \"x\"\n\n[git]\nname = \"Ada Lovelace\"\n"), config.ConfigPerm)
+	// A key that no longer exists, and an image create would refuse: init is
+	// how such a file gets written again, so it has to open.
+	old := "[ssh]\npubkey = \"x\"\n\n[git]\nname = \"Ada Lovelace\"\n\n[hetzner]\nimage = \"ubuntu-24.04\"\n"
+
+	err := os.WriteFile(path, []byte(old), config.ConfigPerm)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,7 +39,6 @@ func Render(cfg Config) string {
 		"[hetzner]",
 		"firewall = " + tomlBasicString(cfg.FirewallName),
 		"type = " + tomlBasicString(cfg.ServerType),
-		"image = " + tomlBasicString(cfg.ServerImage),
 		"location = " + tomlBasicString(cfg.ServerLoc),
 		"",
 		"# Coding tools installed for the agent user.",

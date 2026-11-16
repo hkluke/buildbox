@@ -56,24 +56,6 @@ func TestInvalidTag(t *testing.T) {
 	}
 }
 
-// An unknown release passes: that is Hetzner's to refuse at create.
-func TestInvalidImageWantsAnUbuntuImage(t *testing.T) {
-	t.Parallel()
-
-	for _, good := range []string{DefaultImage, "ubuntu-24.04", " ubuntu-28.04 ", "ubuntu-26.10"} {
-		if problem := InvalidImage(good); problem != "" {
-			t.Fatalf("%q: %s", good, problem)
-		}
-	}
-
-	for _, bad := range []string{"", "debian-13", "Ubuntu-26.04", "ubuntu", "ubuntu 26.04", "fedora-44"} {
-		problem := InvalidImage(bad)
-		if problem == "" || !strings.Contains(problem, DefaultImage) {
-			t.Fatalf("%q: %q", bad, problem)
-		}
-	}
-}
-
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 
