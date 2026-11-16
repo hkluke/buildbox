@@ -70,7 +70,7 @@ vendor_data:
   enabled: false
 
 # Hetzner turns on password login when no SSH key is passed to hcloud.
-# OpenSSH is disabled below; this keeps passwords off should it ever return.
+# OpenSSH is removed below; this keeps passwords off should it ever return.
 ssh_pwauth: false
 
 # No authorized_keys: logins arrive over Tailscale SSH, which the tailnet
@@ -95,20 +95,42 @@ write_files:
     content: |
       eval $(keychain --eval --agents ssh id_ed25519)
       export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
-
+  # Disabling OpenSSH's units does not keep it off. cloud-init's network
+  # unit wants sshd.service, so every boot starts it again, and systemd 256
+  # and later give an installed sshd a unix socket any local user can open.
+  # These two empty files are the switches for both: Ubuntu's ssh units skip
+  # sshd while the first exists, and the second masks the generator that
+  # makes the socket. They also hold when a later package brings
+  # openssh-server back as a dependency.
+  - path: /etc/ssh/sshd_not_to_be_run
+    permissions: "0644"
+    content: ""
+  - path: /etc/systemd/system-generators/systemd-ssh-generator
+    permissions: "0644"
+    content: ""
+__ANTIGRAVITY_FILES__
 runcmd:
   # Without --ssh-key, Hetzner sets a root password and prints/emails it.
   # Locking it makes those copies useless without asking for a Hetzner key.
   - ['passwd', '--lock', 'root']
+  # Tailscale SSH is the only way in, so the box carries no OpenSSH server
+  # for the agent user to reach on loopback. Remove, not purge: Tailscale SSH
+  # presents the host keys in /etc/ssh, and a purge deletes them. Tailscale
+  # serves SFTP itself, so OpenSSH's sftp-server goes too. Like every package
+  # step, this comes before the tailnet join.
+  - ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '--option', 'DPkg::Lock::Timeout=300',
+     'remove', '--yes', 'openssh-server', 'openssh-sftp-server']
+  # systemd makes sshd's unix socket at the start of the first boot, before
+  # the mask above exists. This stops what is left of it, so nothing
+  # lingers on a box that did not reboot. A pattern and not the name: it
+  # matches nothing where there is no such socket, which is no error.
+  - ['systemctl', 'stop', 'sshd-*.socket']
   # Tailscale. Its package starts tailscaled, so up needs no service step.
   # The tag makes the box the tag's device rather than the user's, so no rule
   # about the user's devices applies to it; a key without the tag is refused
   # here. Auto-update keeps a long-lived box on a current client.
   - ['tailscale', 'up', '--auth-key=__TS_AUTHKEY__', '--ssh', '--advertise-tags=__TS_TAG__', '--hostname=__NAME__']
   - ['tailscale', 'set', '--auto-update']
-  # Tailscale SSH answers port 22 on the tailnet and the firewall admits
-  # nothing else, so OpenSSH would only ever serve loopback. Off.
-  - ['systemctl', 'disable', '--now', 'ssh.socket', 'ssh.service']
   # Host-level lockdown
   - ['ufw', 'default', 'deny', 'incoming']
   - ['ufw', 'default', 'allow', 'outgoing']
@@ -151,8 +173,48 @@ func Render(cfg config.Config, name, authKey string) (string, error) {
 		"__TS_TAG__", cfg.Tag,
 		"__NAME__", name,
 		"__CODEX_PACKAGES__", codexPackages(tools),
+		"__ANTIGRAVITY_FILES__", antigravityProfile(tools),
 	).Replace(userDataDocument(codingToolLines(tools))), nil
 }
+
+// antigravityProfilePath is agy's AppArmor profile, among the ones AppArmor
+// loads at every boot.
+const antigravityProfilePath = "/etc/apparmor.d/agy"
+
+// antigravityProfile is the write_files entry for agy's AppArmor profile. The
+// replacer does not read its own output, so the agent user is written in here
+// rather than left as a placeholder.
+func antigravityProfile(ids []string) string {
+	if !slices.Contains(ids, config.ToolAntigravity) {
+		return ""
+	}
+
+	return `  # Antigravity CLI builds its sandbox from user namespaces and offers Auto
+  # mode only with it. Ubuntu denies working user namespaces to a program
+  # without an AppArmor profile that allows them. This profile confines
+  # nothing and allows only that, the shape Ubuntu ships for rootlesskit.
+  # agy sits in the agent's home, so in effect the agent user gets them,
+  # which rootlesskit already gives it. runcmd loads the profile.
+  - path: ` + antigravityProfilePath + `
+    permissions: "0644"
+    content: |
+      abi <abi/5.0>,
+      include <tunables/global>
+
+      profile agy /home/` + config.AgentUser + `/.local/bin/agy flags=(unconfined) {
+        userns,
+        @{exec_path} mr,
+      }
+`
+}
+
+// antigravityProfileLoad is the runcmd entry that loads the profile. It goes
+// before agy's installer, so agy never runs without it.
+const antigravityProfileLoad = `  # agy's AppArmor profile, before agy first runs. AppArmor reads
+  # /etc/apparmor.d only at boot, so a box that did not reboot would not have
+  # it. Replace, not add: a box that did reboot has it loaded already.
+  - ['apparmor_parser', '--replace', '` + antigravityProfilePath + `']
+`
 
 // codexPackages is the apt entry for bubblewrap. Codex sandboxes its commands
 // with /usr/bin/bwrap. The Ubuntu package is unprivileged, not setuid, so the
@@ -178,6 +240,10 @@ func codingToolLines(ids []string) string {
 	for _, tool := range config.Tools() {
 		if !chosen[tool.ID] {
 			continue
+		}
+
+		if tool.ID == config.ToolAntigravity {
+			lines.WriteString(antigravityProfileLoad)
 		}
 
 		lines.WriteString("  # " + tool.Name + " for the agent user\n")

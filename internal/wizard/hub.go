@@ -43,7 +43,7 @@ const (
 // belong to none.
 func sectionOf(step stepID) (section, bool) {
 	switch step {
-	case stepLocation, stepMachine, stepImage:
+	case stepLocation, stepMachine:
 		return sectionBox, true
 	case stepGitKey, stepGitIdentity, stepTools:
 		return sectionAgent, true
@@ -101,7 +101,7 @@ func sectionFor(rowID string) (section, bool) {
 func (wiz Model) sectionSteps(sec section) []stepID {
 	switch sec {
 	case sectionBox:
-		return []stepID{stepLocation, stepMachine, stepImage}
+		return []stepID{stepLocation, stepMachine}
 	case sectionAgent:
 		return []stepID{stepGitKey, stepGitIdentity, stepTools}
 	case sectionTailnet:
@@ -238,11 +238,11 @@ func keepHubChoice(current, rowID string) string {
 }
 
 // boxComplete reports whether the chosen server type can be created where
-// the box runs, with an image to boot.
+// the box runs.
 func (wiz Model) boxComplete() bool {
 	_, place, ok := wiz.cat.Place(wiz.serverType, wiz.location)
 
-	return ok && place.Creatable && wiz.image != ""
+	return ok && place.Creatable
 }
 
 // agentProblem is what the Agent section still needs, or empty.
@@ -522,21 +522,23 @@ func (wiz Model) factStyles(row pickerRow) (lipgloss.Style, lipgloss.Style, lipg
 
 func (wiz Model) boxRow() pickerRow {
 	_, place, ok := wiz.cat.Place(wiz.serverType, wiz.location)
-	if !ok || !place.Creatable || wiz.image == "" {
+	if !ok || !place.Creatable {
 		row := wiz.hubRow(hubBox, sectionName(sectionBox), value(notChosen))
-		row.meta = "Open to pick a location, a server type, and an image."
+		row.meta = "Open to pick a location and a server type."
 		row.warn = true
 
 		return row
 	}
 
 	// The firewall is not here: Write creates a missing one and says so, and
-	// create checks its rules on every run.
+	// create checks its rules on every run. The image is, though it is no
+	// setting: the row says what create makes, and a config from an older
+	// buildbox may have named another release.
 	return wiz.hubRow(hubBox, sectionName(sectionBox),
 		hubFact{label: "provider", value: providerName},
 		hubFact{label: "type", value: wiz.serverType},
 		hubFact{label: "location", value: wiz.placeName()},
-		hubFact{label: "image", value: wiz.image},
+		hubFact{label: "image", value: config.Image},
 		hubFact{label: "price", value: priceSentence(wiz.cat.Currency, place)},
 	)
 }

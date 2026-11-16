@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
-
-	"github.com/hkluke/buildbox/internal/config"
 )
 
 // Catalog is the Hetzner data init can show without keeping hcloud types.
@@ -21,7 +19,6 @@ type Catalog struct {
 	Locations []LocationOffer
 	Machines  []MachineOffer
 	Firewall  FirewallState
-	Images    []ImageOffer
 }
 
 // LocationOffer is one location, where it is, and how many types it can
@@ -70,23 +67,18 @@ type FirewallState struct {
 	Note   string
 }
 
-// ImageOffer is one image buildbox can provision, with its architectures.
-type ImageOffer struct {
-	Name   string
-	Detail string
-}
-
 // errNoAnswer is a catalog load that ran out of time.
 var errNoAnswer = errors.New("the Hetzner API did not answer")
 
-// LoadCatalog reads locations, server types, prices, the firewall, and the
-// Ubuntu images in one go, within catalogTimeout.
+// LoadCatalog reads locations, server types, prices, and the firewall in one
+// go, within catalogTimeout. Images are not among them: every box boots
+// config.Image.
 func LoadCatalog(ctx context.Context, client *hcloud.Client) (Catalog, error) {
 	return loadWithin(ctx, client, fetchCatalog)
 }
 
 // LoadPrices reads locations, server types, and prices, within
-// catalogTimeout. Firewall and Images stay empty; price needs neither.
+// catalogTimeout. Firewall stays empty; price does not need it.
 func LoadPrices(ctx context.Context, client *hcloud.Client) (Catalog, error) {
 	return loadWithin(ctx, client, fetchPrices)
 }
@@ -139,7 +131,7 @@ func fetchPrices(callCtx context.Context, client *hcloud.Client) (Catalog, error
 		return Catalog{}, err
 	}
 
-	return AssembleCatalog(offers.locations, offers.serverTypes, offers.pricing, nil, nil, time.Now()), nil
+	return AssembleCatalog(offers.locations, offers.serverTypes, offers.pricing, nil, time.Now()), nil
 }
 
 func fetchCatalog(callCtx context.Context, client *hcloud.Client) (Catalog, error) {
@@ -153,15 +145,7 @@ func fetchCatalog(callCtx context.Context, client *hcloud.Client) (Catalog, erro
 		return Catalog{}, fmt.Errorf("could not read Hetzner firewall %s: %w", FirewallName, err)
 	}
 
-	images, err := client.Image.AllWithOpts(callCtx, hcloud.ImageListOpts{
-		Type:   []hcloud.ImageType{hcloud.ImageTypeSystem},
-		Status: []hcloud.ImageStatus{hcloud.ImageStatusAvailable},
-	})
-	if err != nil {
-		return Catalog{}, fmt.Errorf("could not list Hetzner images: %w", err)
-	}
-
-	return AssembleCatalog(offers.locations, offers.serverTypes, offers.pricing, firewall, images, time.Now()), nil
+	return AssembleCatalog(offers.locations, offers.serverTypes, offers.pricing, firewall, time.Now()), nil
 }
 
 // AssembleCatalog builds the catalog from API data. now decides which
@@ -171,7 +155,6 @@ func AssembleCatalog(
 	serverTypes []*hcloud.ServerType,
 	pricing hcloud.Pricing,
 	firewall *hcloud.Firewall,
-	images []*hcloud.Image,
 	now time.Time,
 ) Catalog {
 	machines := machineOffers(serverTypes, now)
@@ -181,7 +164,6 @@ func AssembleCatalog(
 		Locations: locationOffers(locations, machines),
 		Machines:  machines,
 		Firewall:  firewallStatus(firewall),
-		Images:    imageOffers(images),
 	}
 }
 
@@ -359,70 +341,6 @@ func firewallNote(rules []hcloud.FirewallRule) (bool, string) {
 	}
 
 	return false, strings.Join(bad, ", ")
-}
-
-func imageOffers(images []*hcloud.Image) []ImageOffer {
-	order := []string{}
-	byName := map[string]*imageBuild{}
-
-	for _, image := range images {
-		if image == nil || !strings.HasPrefix(image.Name, config.ImagePrefix) || image.IsDeprecated() {
-			continue
-		}
-
-		item, ok := byName[image.Name]
-		if !ok {
-			item = &imageBuild{detail: imageDetail(image), archs: map[string]struct{}{}}
-			byName[image.Name] = item
-			order = append(order, image.Name)
-		}
-
-		if image.Architecture != "" {
-			item.archs[string(image.Architecture)] = struct{}{}
-		}
-	}
-
-	slices.Sort(order)
-	slices.Reverse(order)
-
-	offers := make([]ImageOffer, 0, len(order))
-	for _, name := range order {
-		offers = append(offers, ImageOffer{Name: name, Detail: byName[name].line()})
-	}
-
-	return offers
-}
-
-type imageBuild struct {
-	detail string
-	archs  map[string]struct{}
-}
-
-func (item *imageBuild) line() string {
-	if len(item.archs) == 0 {
-		return item.detail
-	}
-
-	archs := make([]string, 0, len(item.archs))
-	for arch := range item.archs {
-		archs = append(archs, arch)
-	}
-
-	slices.Sort(archs)
-
-	return item.detail + " · " + strings.Join(archs, ", ")
-}
-
-func imageDetail(image *hcloud.Image) string {
-	if image.Description != "" {
-		return image.Description
-	}
-
-	if image.OSVersion != "" {
-		return "Ubuntu " + image.OSVersion
-	}
-
-	return "Ubuntu"
 }
 
 // HasLocation reports whether the catalog lists the location called name.

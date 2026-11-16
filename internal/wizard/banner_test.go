@@ -79,8 +79,8 @@ func TestLoadingScreenLeavesOutTheCubeWithoutColor(t *testing.T) {
 // sectionSteps are the screens inside the sections, each with its own header.
 func sectionSteps() []stepID {
 	return []stepID{
-		stepLocation, stepMachine, stepImage, stepGitKey, stepGitIdentity, stepTools, stepAccess, stepToken,
-		stepPreview, stepPolicy, stepKeys, stepOAuthID, stepOAuthSecret,
+		stepLocation, stepMachine, stepGitKey, stepGitIdentity, stepTools, stepAccess, stepToken, stepPreview,
+		stepPolicy, stepKeys, stepOAuthID, stepOAuthSecret,
 	}
 }
 

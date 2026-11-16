@@ -30,7 +30,6 @@ const (
 	stepHub
 	stepLocation
 	stepMachine
-	stepImage
 	stepGitKey
 	stepGitIdentity
 	stepTools
@@ -164,10 +163,8 @@ type Model struct {
 	gitEmail        string
 	tools           string
 	toolChoice      string
-	image           string
 	location        string
 	serverType      string
-	suggestImage    string
 	suggestLocation string
 	suggestMachine  string
 
@@ -217,7 +214,6 @@ func New(seed config.Config, dest string, replacing bool, tailnet tailscale.Tail
 		gitName:      seed.GitUserName,
 		gitEmail:     seed.GitUserEmail,
 		tools:        seed.AITools,
-		image:        seed.ServerImage,
 		location:     seed.ServerLoc,
 		serverType:   seed.ServerType,
 	}
@@ -277,7 +273,6 @@ func (wiz Model) Config() config.Config {
 		GitUserEmail:      wiz.gitEmail,
 		FirewallName:      hetzner.FirewallName,
 		ServerType:        wiz.serverType,
-		ServerImage:       wiz.image,
 		ServerLoc:         wiz.location,
 		AITools:           config.StoredTools(wiz.tools),
 		Tag:               wiz.tag,
@@ -362,10 +357,7 @@ func (wiz Model) onReady(msg catalogReady) (tea.Model, tea.Cmd) {
 		return wiz, tea.Quit
 	}
 
-	wiz.cat.Images = ensureImage(wiz.cat.Images, wiz.image)
-	wiz.image = preferredImage(wiz.cat, wiz.image)
 	wiz.location = preferredLocation(wiz.cat, wiz.location)
-	wiz.suggestImage = wiz.image
 	wiz.suggestLocation = wiz.location
 	wiz = wiz.settleMachine()
 	wiz.loaded = true
@@ -558,7 +550,7 @@ func (wiz Model) onText(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return next.startPlan()
 	case stepOAuthSecret:
 		return next.startCheck()
-	case stepLoad, stepHub, stepLocation, stepMachine, stepImage, stepGitKey, stepGitIdentity, stepTools,
+	case stepLoad, stepHub, stepLocation, stepMachine, stepGitKey, stepGitIdentity, stepTools,
 		stepAccess, stepPreview, stepPolicy, stepKeys, stepOAuthID:
 		return next.advance()
 	default:
@@ -716,7 +708,7 @@ func (wiz Model) onList(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return wiz.onTools(msg)
 	case stepLocation:
 		return wiz.onLocations(msg)
-	case stepLoad, stepHub, stepMachine, stepImage, stepGitIdentity, stepAccess, stepToken, stepOAuthID,
+	case stepLoad, stepHub, stepMachine, stepGitIdentity, stepAccess, stepToken, stepOAuthID,
 		stepOAuthSecret:
 		return wiz.onPicker(msg)
 	default:
@@ -998,8 +990,6 @@ func (wiz Model) typing() bool {
 		return wiz.gitEditing
 	case stepToken, stepOAuthID, stepOAuthSecret, stepGitIdentity:
 		return true
-	case stepImage:
-		return len(wiz.cat.Images) == 0
 	case stepLoad, stepHub, stepAccess, stepPreview, stepPolicy, stepKeys, stepTools, stepLocation, stepMachine:
 		return false
 	default:
@@ -1027,7 +1017,6 @@ func (wiz Model) fieldValue() string {
 		stepOAuthSecret: wiz.oauthSecret,
 		stepGitKey:      wiz.gitKey,
 		stepGitIdentity: wiz.gitName,
-		stepImage:       wiz.image,
 	}
 
 	return values[wiz.step]
@@ -1040,7 +1029,6 @@ func (wiz Model) fieldPlaceholder() string {
 		stepOAuthSecret: "tskey-client-...",
 		stepGitKey:      "$HOME/.ssh/github_ed25519",
 		stepGitIdentity: namePlaceholder,
-		stepImage:       config.DefaultImage,
 	}
 
 	return placeholders[wiz.step]
@@ -1052,7 +1040,7 @@ func (wiz Model) commitText(value string) (Model, string) {
 	switch wiz.step {
 	case stepGitKey:
 		return wiz.commitPath(value)
-	case stepToken, stepOAuthID, stepOAuthSecret, stepImage:
+	case stepToken, stepOAuthID, stepOAuthSecret:
 		return wiz.commitPlain(value)
 	case stepLoad, stepHub, stepAccess, stepPreview, stepPolicy, stepKeys, stepGitIdentity, stepTools, stepLocation,
 		stepMachine:
@@ -1088,26 +1076,8 @@ func (wiz Model) commitPlain(value string) (Model, string) {
 
 			return next
 		})
-	case stepImage:
-		return wiz.commitNamed(value)
 	case stepLoad, stepHub, stepAccess, stepPreview, stepPolicy, stepKeys, stepGitKey, stepGitIdentity, stepTools,
 		stepLocation, stepMachine:
-		return wiz, ""
-	default:
-		return wiz, ""
-	}
-}
-
-func (wiz Model) commitNamed(value string) (Model, string) {
-	switch wiz.step {
-	case stepImage:
-		return wiz.commitChecked(value, config.InvalidImage, func(next Model, stored string) Model {
-			next.image = stored
-
-			return next
-		})
-	case stepLoad, stepHub, stepAccess, stepToken, stepPreview, stepPolicy, stepKeys, stepOAuthID, stepOAuthSecret,
-		stepGitKey, stepGitIdentity, stepTools, stepLocation, stepMachine:
 		return wiz, ""
 	default:
 		return wiz, ""
@@ -1227,7 +1197,6 @@ func (wiz Model) selectedID() string {
 		stepKeys:     wiz.keysChoice,
 		stepGitKey:   wiz.gitChoice,
 		stepTools:    wiz.toolChoice,
-		stepImage:    wiz.image,
 		stepLocation: wiz.location,
 		stepMachine:  wiz.serverType,
 	}
@@ -1251,7 +1220,7 @@ func (wiz Model) selectID(rowID string) Model {
 		wiz.gitChoice = keepGitChoice(wiz.gitChoice, rowID)
 	case stepTools:
 		wiz.toolChoice = keepToolChoice(wiz.toolChoice, rowID)
-	case stepImage, stepLocation, stepMachine:
+	case stepLocation, stepMachine:
 		wiz = wiz.selectCatalog(rowID)
 	case stepLoad, stepToken, stepPreview, stepPolicy, stepOAuthID, stepOAuthSecret, stepGitIdentity:
 	}
@@ -1262,8 +1231,6 @@ func (wiz Model) selectID(rowID string) Model {
 // selectCatalog stores a Box section pick; the ids are the catalog's names.
 func (wiz Model) selectCatalog(rowID string) Model {
 	switch wiz.step {
-	case stepImage:
-		wiz.image = rowID
 	case stepLocation:
 		wiz.location = rowID
 	case stepMachine:
@@ -1323,49 +1290,6 @@ func (wiz Model) progress() string {
 	}
 
 	return fmt.Sprintf("%s · %d of %d", sectionName(sec), index+1, len(steps))
-}
-
-// ensureImage keeps a configured image the catalog no longer lists, such as
-// a deprecated release Hetzner still boots, but never one buildbox cannot
-// provision.
-func ensureImage(offers []hetzner.ImageOffer, name string) []hetzner.ImageOffer {
-	if name == "" || imageKnown(offers, name) || config.InvalidImage(name) != "" {
-		return offers
-	}
-
-	extra := hetzner.ImageOffer{Name: name, Detail: "from the current config"}
-
-	return append([]hetzner.ImageOffer{extra}, offers...)
-}
-
-func imageKnown(offers []hetzner.ImageOffer, name string) bool {
-	for _, offer := range offers {
-		if offer.Name == name {
-			return true
-		}
-	}
-
-	return false
-}
-
-func preferredImage(cat hetzner.Catalog, prefer string) string {
-	if imageKnown(cat.Images, prefer) {
-		return prefer
-	}
-
-	if imageKnown(cat.Images, config.DefaultImage) {
-		return config.DefaultImage
-	}
-
-	if len(cat.Images) > 0 {
-		return cat.Images[0].Name
-	}
-
-	if prefer != "" && config.InvalidImage(prefer) == "" {
-		return prefer
-	}
-
-	return config.DefaultImage
 }
 
 func cycle(current string, options []string) string {

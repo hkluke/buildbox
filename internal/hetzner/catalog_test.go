@@ -59,10 +59,6 @@ func TestAssembleCatalogAvailabilityAndPrice(t *testing.T) {
 				Port:      new("41641"),
 			}},
 		},
-		[]*hcloud.Image{
-			{Name: "ubuntu-26.04", Description: "Ubuntu 26.04", Architecture: "x86"},
-			{Name: "debian-13", Description: "Debian 13", Architecture: "x86"},
-		},
 		time.Now(),
 	)
 
@@ -102,7 +98,6 @@ func assertCatalog(t *testing.T, cat Catalog) {
 	assertLocationCounts(t, cat)
 	assertCreatablePlace(t, cat)
 	assertFirewallReady(t, cat)
-	assertUbuntuImage(t, cat)
 }
 
 func assertLocationCounts(t *testing.T, cat Catalog) {
@@ -159,14 +154,6 @@ func TestFirewallStatusMissingAndWider(t *testing.T) {
 	}
 }
 
-func assertUbuntuImage(t *testing.T, cat Catalog) {
-	t.Helper()
-
-	if len(cat.Images) != 1 || cat.Images[0].Detail != "Ubuntu 26.04 · x86" {
-		t.Fatalf("images = %+v", cat.Images)
-	}
-}
-
 func serverType(
 	name string,
 	available bool,
@@ -215,8 +202,8 @@ func TestLoadCatalogNamesTheTimeoutWhenTheAPIIsSlow(t *testing.T) {
 }
 
 // LoadPrices stops after the three calls price needs, so a missing firewall
-// or a slow image list never gets in the way of a price check.
-func TestLoadPricesSkipsTheFirewallAndImages(t *testing.T) {
+// never gets in the way of a price check.
+func TestLoadPricesSkipsTheFirewall(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -238,7 +225,7 @@ func TestLoadPricesSkipsTheFirewallAndImages(t *testing.T) {
 	client := hcloud.NewClient(hcloud.WithToken("token"), hcloud.WithEndpoint(server.URL))
 
 	cat, err := LoadPrices(t.Context(), client)
-	if err != nil || cat.Firewall.Exists || len(cat.Images) != 0 {
+	if err != nil || cat.Firewall.Exists {
 		t.Fatalf("catalog = %+v err = %v", cat, err)
 	}
 

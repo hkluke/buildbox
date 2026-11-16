@@ -96,6 +96,47 @@ func TestCodexInstallsBubblewrap(t *testing.T) {
 	}
 }
 
+// The profile lets whatever sits at agy's path create user namespaces, so it
+// belongs on a box only with Antigravity, and loaded before agy first runs.
+func TestAntigravityInstallsItsAppArmorProfile(t *testing.T) {
+	t.Parallel()
+
+	with, err := Render(config.Config{
+		AITools: config.ToolAntigravity,
+	}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"  - path: /etc/apparmor.d/agy\n",
+		"      profile agy /home/" + config.AgentUser + "/.local/bin/agy flags=(unconfined) {\n",
+		"        userns,\n",
+	} {
+		if !strings.Contains(with, want) {
+			t.Fatalf("missing %q\n%s", want, with)
+		}
+	}
+
+	loadAt := strings.Index(with, "  - ['apparmor_parser', '--replace', '/etc/apparmor.d/agy']\n")
+	installAt := strings.Index(with, "antigravity.google/cli/install.sh")
+
+	if loadAt < 0 || installAt < loadAt {
+		t.Fatalf("the profile is not loaded before agy's installer\n%s", with)
+	}
+
+	without, err := Render(config.Config{
+		AITools: config.ToolCodex + " " + config.ToolClaude,
+	}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(without, "apparmor") || strings.Contains(without, "userns") {
+		t.Fatal("an AppArmor profile without antigravity")
+	}
+}
+
 func assertToolLines(t *testing.T, doc string, want ...string) {
 	t.Helper()
 
@@ -127,7 +168,6 @@ func TestUserDataJoinsTaggedWithoutLoginKeys(t *testing.T) {
 	for _, want := range []string{
 		"--advertise-tags=tag:dev",
 		"'tailscale', 'set', '--auto-update'",
-		"'systemctl', 'disable', '--now', 'ssh.socket', 'ssh.service'",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("missing %q\n%s", want, doc)
@@ -136,5 +176,44 @@ func TestUserDataJoinsTaggedWithoutLoginKeys(t *testing.T) {
 
 	if strings.Contains(doc, "ssh_authorized_keys") || strings.Contains(doc, "__") {
 		t.Fatalf("login keys or an unfilled placeholder:\n%s", doc)
+	}
+}
+
+// Disabling the ssh units lasted until the next reboot, since cloud-init's
+// own unit wants sshd.service, so the document must not go back to it. The
+// two files keep sshd from starting, the package is removed and never
+// purged, which would delete the host keys Tailscale SSH presents, and all
+// of it is done before the box joins the tailnet. The socket systemd made
+// before the mask existed is stopped by pattern, since stopping it by name
+// fails on a release that has no such socket.
+func TestUserDataLeavesNoOpenSSHServer(t *testing.T) {
+	t.Parallel()
+
+	doc, err := Render(config.Config{Tag: config.DefaultTag}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const remove = "'remove', '--yes', 'openssh-server', 'openssh-sftp-server']"
+
+	for _, want := range []string{
+		"  - path: /etc/ssh/sshd_not_to_be_run\n",
+		"  - path: /etc/systemd/system-generators/systemd-ssh-generator\n",
+		remove,
+		"  - ['systemctl', 'stop', 'sshd-*.socket']\n",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("missing %q\n%s", want, doc)
+		}
+	}
+
+	for _, unwanted := range []string{"'purge'", "'systemctl', 'disable', '--now', 'ssh"} {
+		if strings.Contains(doc, unwanted) {
+			t.Fatalf("unexpected %q\n%s", unwanted, doc)
+		}
+	}
+
+	if strings.Index(doc, remove) > strings.Index(doc, "'tailscale', 'up'") {
+		t.Fatalf("the OpenSSH server is removed after the tailnet join:\n%s", doc)
 	}
 }

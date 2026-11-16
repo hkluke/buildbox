@@ -104,8 +104,7 @@ func (wiz Model) View() string {
 		return wiz.viewIdentity()
 	case stepLocation:
 		return wiz.viewLocation()
-	case stepHub, stepMachine, stepImage, stepGitKey, stepTools, stepAccess, stepToken, stepKeys, stepOAuthID,
-		stepOAuthSecret:
+	case stepHub, stepMachine, stepGitKey, stepTools, stepAccess, stepToken, stepKeys, stepOAuthID, stepOAuthSecret:
 		return wiz.viewForm()
 	default:
 		return ""
@@ -499,8 +498,8 @@ func (wiz Model) footerText() string {
 		return wiz.previewFooterText()
 	case stepGitKey:
 		return choiceFooter(wiz.gitEditing)
-	case stepLoad, stepLocation, stepMachine, stepImage, stepTools, stepAccess, stepToken, stepPolicy,
-		stepKeys, stepOAuthID, stepOAuthSecret:
+	case stepLoad, stepLocation, stepMachine, stepTools, stepAccess, stepToken, stepPolicy, stepKeys, stepOAuthID,
+		stepOAuthSecret:
 		return fixedFooter(wiz.step)
 	default:
 		return continueFooter
@@ -511,7 +510,6 @@ func (wiz Model) footerText() string {
 func fixedFooter(step stepID) string {
 	footers := map[stepID]string{
 		stepMachine:  "↑↓ move  ·  a arch  ·  c cpu  ·  enter select  ·  esc back  ·  q quit",
-		stepImage:    pickFooter,
 		stepLocation: locationKeys,
 		stepKeys:     pickFooter,
 		stepAccess:   pickFooter,
@@ -553,8 +551,6 @@ func (wiz Model) pinBody() string {
 		return wiz.pinLocation()
 	case stepMachine:
 		return wiz.pinMachine()
-	case stepImage:
-		return wiz.pinImage()
 	case stepLoad, stepHub, stepAccess, stepToken, stepPreview, stepPolicy, stepKeys, stepOAuthID, stepOAuthSecret,
 		stepGitKey, stepGitIdentity, stepTools:
 		return ""
@@ -613,16 +609,6 @@ func (wiz Model) pinMachine() string {
 	return strings.Join(lines, "\n")
 }
 
-func (wiz Model) pinImage() string {
-	for _, image := range wiz.cat.Images {
-		if image.Name == wiz.image {
-			return wiz.paint.Text.Render(console.TrimWidth(image.Name+"  ·  "+image.Detail, wiz.innerWidth()))
-		}
-	}
-
-	return ""
-}
-
 func (wiz Model) tailnetName() string {
 	if wiz.tailnet.Name != "" {
 		return wiz.tailnet.Name
@@ -659,7 +645,6 @@ func (wiz Model) question() (string, string) {
 			"Coding tools",
 			"Installed on the box for the agent, beside Git and Docker.",
 		},
-		stepImage:    {"Image", "The Ubuntu release the box boots."},
 		stepLocation: {"Location", "Where the box runs. Prices on the next screen are for this location."},
 	}
 
@@ -743,7 +728,7 @@ func (wiz Model) rows() []pickerRow {
 		return wiz.gitRows()
 	case stepTools:
 		return wiz.toolRows()
-	case stepImage, stepLocation, stepMachine:
+	case stepLocation, stepMachine:
 		return wiz.catalogRows()
 	case stepLoad, stepToken, stepPreview, stepPolicy, stepOAuthID, stepOAuthSecret, stepGitIdentity:
 		return nil
@@ -754,10 +739,6 @@ func (wiz Model) rows() []pickerRow {
 
 // catalogRows are the Box section's lists, built from the Hetzner catalog.
 func (wiz Model) catalogRows() []pickerRow {
-	if wiz.step == stepImage {
-		return imageRows(wiz.cat.Images, wiz.suggestImage)
-	}
-
 	if wiz.step == stepLocation {
 		return locationRows(wiz.cat.Locations, wiz.suggestLocation)
 	}
@@ -779,21 +760,6 @@ func (wiz Model) toolRows() []pickerRow {
 			id:    tool.ID,
 			title: box + " " + tool.Name,
 			tag:   withRecommended("", tool.ID == config.ToolOpenCode),
-		})
-	}
-
-	return rows
-}
-
-func imageRows(offers []hetzner.ImageOffer, suggest string) []pickerRow {
-	rows := make([]pickerRow, 0, len(offers))
-
-	for _, offer := range offers {
-		rows = append(rows, pickerRow{
-			id:    offer.Name,
-			title: offer.Name,
-			tag:   withRecommended("", offer.Name == suggest),
-			meta:  offer.Detail,
 		})
 	}
 
@@ -1104,7 +1070,7 @@ func (wiz Model) liveNote() string {
 			return wiz.paint.OK.Render("file found")
 		}
 	case stepLoad, stepHub, stepAccess, stepToken, stepPreview, stepPolicy, stepKeys, stepOAuthID, stepOAuthSecret,
-		stepGitIdentity, stepTools, stepImage, stepLocation, stepMachine:
+		stepGitIdentity, stepTools, stepLocation, stepMachine:
 		return ""
 	default:
 		return ""

@@ -88,16 +88,6 @@ func InvalidTag(value string) string {
 	return ""
 }
 
-// InvalidImage checks an image name against ImagePrefix.
-func InvalidImage(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || strings.ContainsAny(value, " \t\r\n") || !strings.HasPrefix(value, ImagePrefix) {
-		return "Use an Ubuntu image, such as " + DefaultImage + ". Boxes are set up for Ubuntu."
-	}
-
-	return ""
-}
-
 // InvalidToken checks a single-word secret; label names it in the message.
 func InvalidToken(label, value string) string {
 	value = strings.TrimSpace(value)

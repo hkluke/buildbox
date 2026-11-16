@@ -204,63 +204,6 @@ func TestHubShowsTheTailnetAndTheKeySource(t *testing.T) {
 		"Open to add the policy lines and the OAuth client.")
 }
 
-func TestChoiceScreensMarkOneRecommendation(t *testing.T) {
-	t.Parallel()
-
-	wiz := New(config.Config{}, testDest, false, adminTailnet(), nil)
-	wiz.width = 88
-	wiz.height = 36
-	wiz.step = stepImage
-	wiz.image = config.DefaultImage
-	wiz.suggestImage = config.DefaultImage
-	wiz.cat.Images = []hetzner.ImageOffer{
-		{Name: config.DefaultImage, Detail: "Ubuntu 26.04"},
-		{Name: "ubuntu-24.04", Detail: "Ubuntu 24.04"},
-	}
-
-	imageView := stripANSI(wiz.View())
-	assertViewContains(t, imageView, config.DefaultImage+"  "+recommendedTag)
-
-	if strings.Count(imageView, recommendedTag) != 1 {
-		t.Fatalf("image recommendations:\n%s", imageView)
-	}
-}
-
-// A hand-edited config can name an image buildbox cannot set up: the picker
-// recommends the default instead, and the text field refuses it.
-func TestImageStepKeepsToUbuntu(t *testing.T) {
-	t.Parallel()
-
-	offers := []hetzner.ImageOffer{{Name: config.DefaultImage, Detail: "Ubuntu 26.04"}}
-	cat := hetzner.Catalog{Images: offers}
-
-	if kept := ensureImage(offers, "debian-13"); len(kept) != 1 {
-		t.Fatalf("offered a Debian image: %+v", kept)
-	}
-
-	if got := preferredImage(cat, "debian-13"); got != config.DefaultImage {
-		t.Fatalf("preferred %q", got)
-	}
-
-	if kept := ensureImage(offers, "ubuntu-24.04"); len(kept) != 2 || kept[0].Name != "ubuntu-24.04" {
-		t.Fatalf("dropped a configured Ubuntu image: %+v", kept)
-	}
-
-	if got := preferredImage(hetzner.Catalog{}, "debian-13"); got != config.DefaultImage {
-		t.Fatalf("preferred %q with no catalog", got)
-	}
-
-	wiz := tailnetScreen(stepImage, adminTailnet())
-
-	if problem := wiz.commitPlainProblem("debian-13"); !strings.Contains(problem, "Ubuntu") {
-		t.Fatalf("debian problem %q", problem)
-	}
-
-	if problem := wiz.commitPlainProblem("ubuntu-24.04"); problem != "" {
-		t.Fatal(problem)
-	}
-}
-
 // commitPlainProblem is the validation message for value on the current
 // text step.
 func (wiz Model) commitPlainProblem(value string) string {
@@ -445,7 +388,7 @@ func TestWorkingClientFromTheConfigMarksTheTailnetDone(t *testing.T) {
 	}
 
 	assertViewContains(t, fold(stripANSI(done.View())), "OAuth client ready",
-		"provider Hetzner type "+config.DefaultType+" location Falkenstein, Germany image ubuntu-26.04 "+
+		"provider Hetzner type "+config.DefaultType+" location Falkenstein, Germany image "+config.Image+" "+
 			"price €0.0080 per hour (max €4.99 per month)")
 }
 
@@ -550,14 +493,12 @@ func TestSectionsReturnToTheHub(t *testing.T) {
 	wiz.hubChoice = hubBox
 
 	box, _ := wiz.onHub(tea.KeyMsg{Type: tea.KeyEnter})
-	if box.step != stepLocation || box.progress() != "Box · 1 of 3" {
+	if box.step != stepLocation || box.progress() != "Box · 1 of 2" {
 		t.Fatalf("step %d progress %q", box.step, box.progress())
 	}
 
-	machine, _ := box.advance()
-
-	last, _ := machine.advance()
-	if last.step != stepImage || last.progress() != "Box · 3 of 3" {
+	last, _ := box.advance()
+	if last.step != stepMachine || last.progress() != "Box · 2 of 2" {
 		t.Fatalf("step %d progress %q", last.step, last.progress())
 	}
 
@@ -696,7 +637,6 @@ func completeModel(t *testing.T) Model {
 		AITools:       config.ToolOpenCode,
 		ServerLoc:     config.SeedLocation,
 		ServerType:    config.DefaultType,
-		ServerImage:   config.DefaultImage,
 	}
 
 	wiz := New(seed, testDest, true, adminTailnet(), nil)

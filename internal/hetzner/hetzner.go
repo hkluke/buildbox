@@ -333,7 +333,7 @@ func CreateServer(
 	result, _, err := client.Server.Create(createCtx, hcloud.ServerCreateOpts{
 		Name:       name,
 		ServerType: &hcloud.ServerType{Name: cfg.ServerType},
-		Image:      &hcloud.Image{Name: cfg.ServerImage},
+		Image:      &hcloud.Image{Name: config.Image},
 		Location:   &hcloud.Location{Name: cfg.ServerLoc},
 		UserData:   userData,
 		Labels: map[string]string{
