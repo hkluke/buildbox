@@ -108,7 +108,7 @@ write_files:
   - path: /etc/systemd/system-generators/systemd-ssh-generator
     permissions: "0644"
     content: ""
-
+__ANTIGRAVITY_FILES__
 runcmd:
   # Without --ssh-key, Hetzner sets a root password and prints/emails it.
   # Locking it makes those copies useless without asking for a Hetzner key.
@@ -173,8 +173,49 @@ func Render(cfg config.Config, name, authKey string) (string, error) {
 		"__TS_TAG__", cfg.Tag,
 		"__NAME__", name,
 		"__CODEX_PACKAGES__", codexPackages(tools),
+		"__ANTIGRAVITY_FILES__", antigravityProfile(tools),
 	).Replace(userDataDocument(codingToolLines(tools))), nil
 }
+
+// antigravityProfileStaged is where agy's AppArmor profile waits until runcmd
+// has seen that this release can load it.
+const antigravityProfileStaged = "/var/lib/buildbox/agy.apparmor"
+
+// antigravityProfile is the write_files entry for agy's AppArmor profile. The
+// replacer does not read its own output, so the agent user is written in here
+// rather than left as a placeholder.
+func antigravityProfile(ids []string) string {
+	if !slices.Contains(ids, config.ToolAntigravity) {
+		return ""
+	}
+
+	return `  # Antigravity CLI builds its sandbox from user namespaces and offers Auto
+  # mode only with it. Ubuntu denies working user namespaces to a program
+  # without an AppArmor profile that allows them. This profile confines
+  # nothing and allows only that, the shape Ubuntu ships for rootlesskit.
+  # agy sits in the agent's home, so in effect the agent user gets them,
+  # which rootlesskit already gives it. runcmd puts the profile in place.
+  - path: ` + antigravityProfileStaged + `
+    permissions: "0644"
+    content: |
+      abi <abi/5.0>,
+      include <tunables/global>
+
+      profile agy /home/` + config.AgentUser + `/.local/bin/agy flags=(unconfined) {
+        userns,
+        @{exec_path} mr,
+      }
+`
+}
+
+// antigravityProfileLoad is the runcmd entry that loads the profile. It goes
+// before agy's installer, so agy never runs without it.
+const antigravityProfileLoad = `  # agy's AppArmor profile, before agy first runs. It stays for later boots
+  # only when this release could load it: an older AppArmor cannot read it,
+  # and everything in /etc/apparmor.d is loaded at every boot.
+  - ['sh', '-c', 'if apparmor_parser --replace ` + antigravityProfileStaged + `; ` +
+	`then install --mode=0644 ` + antigravityProfileStaged + ` /etc/apparmor.d/agy; fi']
+`
 
 // codexPackages is the apt entry for bubblewrap. Codex sandboxes its commands
 // with /usr/bin/bwrap. The Ubuntu package is unprivileged, not setuid, so the
@@ -200,6 +241,10 @@ func codingToolLines(ids []string) string {
 	for _, tool := range config.Tools() {
 		if !chosen[tool.ID] {
 			continue
+		}
+
+		if tool.ID == config.ToolAntigravity {
+			lines.WriteString(antigravityProfileLoad)
 		}
 
 		lines.WriteString("  # " + tool.Name + " for the agent user\n")

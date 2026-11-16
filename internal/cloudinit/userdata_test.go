@@ -96,6 +96,47 @@ func TestCodexInstallsBubblewrap(t *testing.T) {
 	}
 }
 
+// The profile lets whatever sits at agy's path create user namespaces, so it
+// belongs on a box only with Antigravity, and loaded before agy first runs.
+func TestAntigravityInstallsItsAppArmorProfile(t *testing.T) {
+	t.Parallel()
+
+	with, err := Render(config.Config{
+		AITools: config.ToolAntigravity,
+	}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"  - path: " + antigravityProfileStaged + "\n",
+		"      profile agy /home/" + config.AgentUser + "/.local/bin/agy flags=(unconfined) {\n",
+		"        userns,\n",
+	} {
+		if !strings.Contains(with, want) {
+			t.Fatalf("missing %q\n%s", want, with)
+		}
+	}
+
+	loadAt := strings.Index(with, "apparmor_parser --replace "+antigravityProfileStaged)
+	installAt := strings.Index(with, "antigravity.google/cli/install.sh")
+
+	if loadAt < 0 || installAt < loadAt {
+		t.Fatalf("the profile is not loaded before agy's installer\n%s", with)
+	}
+
+	without, err := Render(config.Config{
+		AITools: config.ToolCodex + " " + config.ToolClaude,
+	}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(without, "apparmor") || strings.Contains(without, "userns") {
+		t.Fatal("an AppArmor profile without antigravity")
+	}
+}
+
 func assertToolLines(t *testing.T, doc string, want ...string) {
 	t.Helper()
 

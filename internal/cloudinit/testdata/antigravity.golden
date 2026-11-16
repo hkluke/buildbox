@@ -95,6 +95,22 @@ write_files:
   - path: /etc/systemd/system-generators/systemd-ssh-generator
     permissions: "0644"
     content: ""
+  # Antigravity CLI builds its sandbox from user namespaces and offers Auto
+  # mode only with it. Ubuntu denies working user namespaces to a program
+  # without an AppArmor profile that allows them. This profile confines
+  # nothing and allows only that, the shape Ubuntu ships for rootlesskit.
+  # agy sits in the agent's home, so in effect the agent user gets them,
+  # which rootlesskit already gives it. runcmd puts the profile in place.
+  - path: /var/lib/buildbox/agy.apparmor
+    permissions: "0644"
+    content: |
+      abi <abi/5.0>,
+      include <tunables/global>
+
+      profile agy /home/agent/.local/bin/agy flags=(unconfined) {
+        userns,
+        @{exec_path} mr,
+      }
 
 runcmd:
   # Without --ssh-key, Hetzner sets a root password and prints/emails it.
@@ -137,5 +153,9 @@ runcmd:
   - ['loginctl', 'enable-linger', 'agent']
   - ['sh', '-c', 'systemctl start user@$(id -u agent).service']
   - ['runuser', '-l', 'agent', '-c', 'XDG_RUNTIME_DIR=/run/user/$(id -u) dockerd-rootless-setuptool.sh install']
+  # agy's AppArmor profile, before agy first runs. It stays for later boots
+  # only when this release could load it: an older AppArmor cannot read it,
+  # and everything in /etc/apparmor.d is loaded at every boot.
+  - ['sh', '-c', 'if apparmor_parser --replace /var/lib/buildbox/agy.apparmor; then install --mode=0644 /var/lib/buildbox/agy.apparmor /etc/apparmor.d/agy; fi']
   # Antigravity CLI for the agent user
   - ['su', '-', 'agent', '-c', 'curl -fsSL https://antigravity.google/cli/install.sh | bash']
