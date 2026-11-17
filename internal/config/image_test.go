@@ -13,6 +13,8 @@ const (
 	// setting.
 	otherImage = "ubuntu-24.04"
 	gitName    = "Ada Lovelace"
+	gitEmail   = "ada@example.com"
+	firewall   = "buildbox-tailscale-only"
 )
 
 // oldConfig is a config from before the image stopped being a setting.
@@ -39,8 +41,8 @@ func TestRenderedConfigNamesNoImage(t *testing.T) {
 	body := Render(Config{
 		GitSSHKeyPath: "/keys/git_ed25519",
 		GitUserName:   gitName,
-		GitUserEmail:  "ada@example.com",
-		FirewallName:  "buildbox-tailscale-only",
+		GitUserEmail:  gitEmail,
+		FirewallName:  firewall,
 		ServerType:    DefaultType,
 		ServerLoc:     SeedLocation,
 		Tag:           DefaultTag,

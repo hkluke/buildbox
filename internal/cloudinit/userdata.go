@@ -89,14 +89,14 @@ users:
 # write-files runs before users-groups, so this cannot target the home
 # directory. runcmd appends it after the skel .bashrc exists. DOCKER_HOST is
 # for tools that ignore the docker CLI context, such as Docker SDKs. keychain
-# is quiet so that a login shows the welcome below and not four lines about
-# the agent it found; it still asks for a passphrase and still warns.
+# is there for a Git key with a passphrase, to ask for it once; it is quiet
+# so that a login shows the welcome below and not four lines about the agent
+# it found. A box without a Git key has no such line.
 write_files:
   - path: /var/lib/buildbox/agent.bashrc
     permissions: "0644"
     content: |
-      eval $(keychain --quiet --eval --agents ssh __GIT_KEY__)
-      export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+__KEYCHAIN__      export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
   # Disabling OpenSSH's units does not keep it off. cloud-init's network
   # unit wants sshd.service, so every boot starts it again, and systemd 256
   # and later give an installed sshd a unix socket any local user can open.
@@ -179,11 +179,21 @@ func Render(cfg config.Config, name, authKey string) (string, error) {
 		"__TS_AUTHKEY__", authKey,
 		"__TS_TAG__", cfg.Tag,
 		"__NAME__", name,
-		"__GIT_KEY__", config.GitKeyName,
+		"__KEYCHAIN__", keychainLine(cfg),
 		"__CODEX_PACKAGES__", codexPackages(tools),
 		"__WELCOME_FILES__", welcomeFiles(tools, name),
 		"__ANTIGRAVITY_FILES__", antigravityProfile(tools),
 	).Replace(userDataDocument(codingToolLines(tools))), nil
+}
+
+// keychainLine loads the Git key into an ssh-agent at each interactive shell.
+// Without a Git key it would only warn that the key is missing.
+func keychainLine(cfg config.Config) string {
+	if !cfg.SharesGitKey() {
+		return ""
+	}
+
+	return "      eval $(keychain --quiet --eval --agents ssh " + config.GitKeyName + ")\n"
 }
 
 // antigravityProfilePath is agy's AppArmor profile, among the ones AppArmor

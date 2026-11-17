@@ -37,7 +37,7 @@ const (
 	// policyBanner is what Tailscale SSH says when the tailnet policy has no
 	// rule for the login. More attempts would not change the policy.
 	policyBanner = "tailnet policy does not permit"
-	// boxKeyName is the box's own key. ssh looks for a key under this name by
+	// boxKeyName is the box key. ssh looks for a key under this name by
 	// itself, so it offers this one to every host the box's ssh config names
 	// no other key for.
 	boxKeyName      = "id_ed25519"
@@ -45,21 +45,31 @@ const (
 	// sshKeygen is named by its full path: a login shell on a box searches
 	// the agent user's own directories first.
 	sshKeygen = "/usr/bin/ssh-keygen"
-	// boxSSHConfig is the agent user's ssh config. It is where an agent that
-	// ssh has refused will look, so it says which key is for what.
-	boxSSHConfig = `# Written by buildbox when it created this box.
+	// sharedKeySSHConfig is the agent user's ssh config on a box that was
+	// given the Git key. It is where an agent that ssh has refused will look,
+	// so it says which key is for what.
+	sharedKeySSHConfig = `# Written by buildbox when it created this box.
 #
-# ` + config.GitKeyName + ` is the Git key and goes to GitHub and GitLab alone. No other host
-# is shown it, since a server that is shown a key can tell whose it is.
-# Another Git host needs an entry of its own, above "Host *".
+# The Git key, ~/.ssh/` + config.GitKeyName + `, is for GitHub and GitLab alone. No other host is
+# shown it, since a server that is shown a key can tell whose it is. Another
+# Git host needs an entry of its own, above "Host *".
 #
-# Every other host gets this box's own key, ~/.ssh/` + boxKeyName + `, which ssh finds
-# by its name. It was made on this box, and it opens nothing until its
-# public half, ~/.ssh/` + boxKeyName + `.pub, is registered with that host.
-# IdentitiesOnly keeps the ssh-agent, which holds the Git key, from
-# offering it there.
+# Every other host gets the box key, ~/.ssh/` + boxKeyName + `, which ssh finds by its
+# name. It was made on this box and opens nothing until its public key,
+# ~/.ssh/` + boxKeyName + `.pub, is added to that host. IdentitiesOnly keeps the
+# ssh-agent, which holds the Git key, from offering it there.
 Host github.com gitlab.com
   IdentityFile ~/.ssh/` + config.GitKeyName + `
+Host *
+  IdentitiesOnly yes
+`
+	// boxKeySSHConfig is the same file on a box that was given no Git key.
+	boxKeySSHConfig = `# Written by buildbox when it created this box.
+#
+# This box has one key, the box key, ~/.ssh/` + boxKeyName + `, which ssh finds by its
+# name and uses for every host, GitHub and GitLab among them. It was made on
+# this box and opens nothing until its public key, ~/.ssh/` + boxKeyName + `.pub, is
+# added to a host.
 Host *
   IdentitiesOnly yes
 `
@@ -200,9 +210,11 @@ func authorizeCreate(
 
 	// The Git key is copied to the box after boot. It is checked here, before
 	// any Hetzner call, so a bad path is reported without one.
-	problem := config.InvalidPrivateKey(cfg.GitSSHKeyPath)
-	if problem != "" {
-		return createPlan{}, abort.New("git.ssh_key: " + problem)
+	if cfg.SharesGitKey() {
+		problem := config.InvalidPrivateKey(cfg.GitSSHKeyPath)
+		if problem != "" {
+			return createPlan{}, abort.New("git.ssh_key: " + problem)
+		}
 	}
 
 	client, err := newHetznerClient()
@@ -300,7 +312,7 @@ func connectSSH(ctx context.Context, plan createPlan, address string) error {
 		})
 }
 
-// setupStages leaves the public half of the box's own key in boxKey.
+// setupStages leaves the box key's public key in boxKey.
 func setupStages(ctx context.Context, plan createPlan, address string, boxKey *string) []stage {
 	cfg := plan.cfg
 	knownHosts := plan.ssh.BoxKnownHosts
@@ -317,9 +329,9 @@ func setupStages(ctx context.Context, plan createPlan, address string, boxKey *s
 			public, err := createBoxKey(ctx, plan.name, address, knownHosts)
 			*boxKey = public
 
-			return "made on the box", err
+			return "created", err
 		}},
-		{"Git", "copying key", func() (string, error) {
+		{"Git", "setting up", func() (string, error) {
 			return cfg.GitUserName + " <" + cfg.GitUserEmail + ">", installGitAccess(ctx, cfg, address, knownHosts)
 		}},
 		{"SSH config", "adding Host " + plan.name, func() (string, error) {
@@ -360,12 +372,21 @@ func printCreateDone(plan createPlan, elapsed time.Duration, needsInclude bool, 
 		{abort.Prog() + " delete " + plan.name, "delete it when you are done"},
 	})
 
-	// The key is read here, before any coding agent has run on the box. A
-	// key the agent prints later could be anyone's.
+	// The box key is shown here, read before any coding agent has run on the
+	// box. A key an agent prints later could be anyone's.
 	plan.con.Blank()
-	plan.con.Note("Hosts other than GitHub and GitLab get the box's own SSH key.")
-	plan.con.Note("It opens nothing until you register its public half there:")
+
+	if plan.cfg.SharesGitKey() {
+		plan.con.Note("To let " + plan.name + " log in to a host other than GitHub or GitLab, add its box key there:")
+		plan.con.Command(boxKey)
+
+		return
+	}
+
+	plan.con.Note(plan.name + " has no access to any host yet. Add its box key wherever it should log in:")
 	plan.con.Command(boxKey)
+	plan.con.Blank()
+	plan.con.Commands(gitHostPages())
 }
 
 func parseCreateArgs(args []string) (string, error) {
@@ -635,8 +656,8 @@ func onBox(ctx context.Context, target, knownHosts, command string) (openssh.Res
 	return openssh.Run(ctx, "ssh", append(args, target, command)...)
 }
 
-// createBoxKey makes the box's own key on the box, so that its private half
-// exists nowhere else, and returns the public half.
+// createBoxKey makes the box key on the box, so that its private key exists
+// nowhere else, and returns its public key.
 func createBoxKey(ctx context.Context, name, address, knownHosts string) (string, error) {
 	result, err := onBox(ctx, config.AgentUser+"@"+address, knownHosts, boxKeyCommand(name, time.Now()))
 
@@ -649,7 +670,7 @@ func createBoxKey(ctx context.Context, name, address, knownHosts string) (string
 }
 
 // boxKeyCommand makes the key without a passphrase, since an agent has to
-// use it unattended, and prints its public half. ssh-keygen does not replace
+// use it unattended, and prints its public key. ssh-keygen does not replace
 // a key that is already there.
 //
 // The comment is the label the key carries wherever it is registered. It
@@ -665,9 +686,9 @@ func boxKeyCommand(name string, made time.Time) string {
 		" && cat " + key + ".pub"
 }
 
-// gitKeyCommand protects the copied key and puts its public half beside it,
+// gitKeyCommand protects the copied key and puts its public key beside it,
 // where ssh and keychain look for it: without that file keychain warns at
-// every login. A key with a passphrase does not give up its public half
+// every login. A key with a passphrase does not give up its public key
 // unasked, so such a box goes without the file. The empty passphrase is
 // passed so that ssh-keygen fails there instead of asking.
 func gitKeyCommand() string {
@@ -677,26 +698,49 @@ func gitKeyCommand() string {
 		sshKeygen + " -y -P '' -f " + key + " > " + key + ".pub 2>/dev/null || rm -f " + key + ".pub; }"
 }
 
-func sshConfigCommand() string {
-	return "cat > ~/.ssh/config << 'EOF'\n" + boxSSHConfig + "EOF\nchmod 600 ~/.ssh/config"
+// boxSSHConfig is the agent user's ssh config. Without a Git key it names
+// no key for GitHub and GitLab, so the box key goes to them as to every host.
+func boxSSHConfig(cfg config.Config) string {
+	if cfg.SharesGitKey() {
+		return sharedKeySSHConfig
+	}
+
+	return boxKeySSHConfig
 }
 
-func installGitAccess(ctx context.Context, cfg config.Config, address, knownHosts string) error {
-	target := config.AgentUser + "@" + address
+func sshConfigCommand(cfg config.Config) string {
+	return "cat > ~/.ssh/config << 'EOF'\n" + boxSSHConfig(cfg) + "EOF\nchmod 600 ~/.ssh/config"
+}
+
+// copyGitKey puts the Git key on the box, for a config that shares one.
+func copyGitKey(ctx context.Context, cfg config.Config, target, knownHosts string) error {
 	remoteKey := "/home/" + config.AgentUser + "/.ssh/" + config.GitKeyName
 	scpArgs := append(sshBaseArgs(knownHosts), cfg.GitSSHKeyPath, target+":"+remoteKey)
 
 	_, err := openssh.Run(ctx, "scp", scpArgs...)
 	if err != nil {
-		return abort.Newf("Could not copy the Git SSH key to %s.", target)
+		return abort.Newf("Could not copy the Git key to %s.", target)
 	}
 
 	_, err = onBox(ctx, target, knownHosts, gitKeyCommand())
 	if err != nil {
-		return abort.Newf("Could not protect the Git SSH key on %s.", target)
+		return abort.Newf("Could not protect the Git key on %s.", target)
 	}
 
-	_, err = onBox(ctx, target, knownHosts, sshConfigCommand())
+	return nil
+}
+
+func installGitAccess(ctx context.Context, cfg config.Config, address, knownHosts string) error {
+	target := config.AgentUser + "@" + address
+
+	if cfg.SharesGitKey() {
+		err := copyGitKey(ctx, cfg, target, knownHosts)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := onBox(ctx, target, knownHosts, sshConfigCommand(cfg))
 	if err != nil {
 		return abort.Newf("Could not write the SSH config on %s.", target)
 	}

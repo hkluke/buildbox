@@ -155,7 +155,7 @@ func TestANewGitKeyCountsAsUnsaved(t *testing.T) {
 	wiz.gitPublicKey = "ssh-ed25519 AAAA buildbox git key"
 
 	if asked, _ := wiz.onKey(press("q")); !asked.askingQuit {
-		t.Fatal("quitting would lose the new key's public half without asking")
+		t.Fatal("quitting would lose the new key's public key without asking")
 	}
 }
 

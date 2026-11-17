@@ -39,8 +39,10 @@ const (
 	applyFooter       = "enter apply  ·  esc back  ·  q quit"
 	keysStepTitle     = "Auth keys"
 	gitStepTitle      = "Git key"
-	customPathTitle   = "Use a key at a custom path"
-	foundMeta         = "Already on this machine."
+	customPathTitle   = "Use a key at a custom path as the shared Git key"
+	foundMeta         = "Already on this machine. Every box gets a copy of it."
+	noGitKeyTitle     = "No shared Git key"
+	noGitKeyFact      = "none, each box uses its own"
 	configMeta        = "Already in the credentials file."
 	continueFooter    = "enter continue  ·  esc back  ·  ctrl+c quit"
 	pickFooter        = "↑↓ move  ·  enter select  ·  esc back  ·  q quit"
@@ -986,30 +988,44 @@ func (wiz Model) keysRows() []pickerRow {
 
 func (wiz Model) gitQuestion() (string, string) {
 	if wiz.gitEditing {
-		return gitStepTitle, "Path to the private key. Its public half must already be on GitHub or GitLab."
+		return gitStepTitle, "Path to the private key. Its public key must already be on GitHub or GitLab."
 	}
 
-	return gitStepTitle, "The agent's SSH key for Git, copied to the box. Give it a key of its own, not yours. " +
-		"A generated key's public half is shown at the end, to add to GitHub or GitLab."
+	return gitStepTitle, "How boxes log in to GitHub and GitLab."
 }
 
+// gitRows are the answers to one question: do boxes share a Git key? The
+// recommended one comes first, and a key found on this machine is offered
+// only while there is one.
 func (wiz Model) gitRows() []pickerRow {
-	custom := pickerRow{
-		id:    gitChoicePath,
-		title: customPathTitle,
-		meta:  "Type the private key path.",
-	}
-	if wiz.gitSuggest == gitChoiceUse {
-		return []pickerRow{wiz.gitUseRow(), wiz.gitNewRow(), custom}
+	rows := []pickerRow{wiz.gitNewRow()}
+
+	if wiz.gitKeyFound() {
+		rows = append(rows, wiz.gitUseRow())
 	}
 
-	return []pickerRow{wiz.gitNewRow(), custom}
+	if wiz.gitSuggest == gitChoiceUse {
+		rows[0], rows[1] = rows[1], rows[0]
+	}
+
+	return append(rows,
+		pickerRow{
+			id:    gitChoicePath,
+			title: customPathTitle,
+			meta:  "Type the private key path. Every box gets a copy of it.",
+		},
+		pickerRow{
+			id:    gitChoiceNone,
+			title: noGitKeyTitle,
+			meta:  "Each box uses its own box key. You add that key for every new box.",
+		},
+	)
 }
 
 func (wiz Model) gitUseRow() pickerRow {
 	row := pickerRow{
 		id:    gitChoiceUse,
-		title: "Use " + console.DisplayPath(wiz.gitKey),
+		title: "Use " + console.DisplayPath(wiz.gitKey) + " as the shared Git key",
 		meta:  foundMeta,
 	}
 
@@ -1019,11 +1035,8 @@ func (wiz Model) gitUseRow() pickerRow {
 func (wiz Model) gitNewRow() pickerRow {
 	row := pickerRow{
 		id:    gitChoiceNew,
-		title: "Generate a dedicated key",
-		meta:  "ed25519, no passphrase.",
-	}
-	if private := gitKeyTarget(); private != "" {
-		row.meta = "ed25519, no passphrase, saved to " + displayKeyPath(private)
+		title: "Generate a shared Git key",
+		meta:  "You add it to GitHub or GitLab once. Every new box can push right away.",
 	}
 
 	return wiz.markRecommended(row, wiz.gitSuggest == gitChoiceNew)

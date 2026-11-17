@@ -53,6 +53,11 @@ const (
 // key unless the ssh config on the box says so.
 const GitKeyName = "git_key"
 
+// GitKeyNone is git.ssh_key when boxes share no Git key: each then uses its
+// own key for GitHub and GitLab as for every other host. It is a value to
+// write on purpose, so a file that leaves the setting out is still refused.
+const GitKeyNone = "none"
+
 // The OAuth client can come from the environment instead of the file, for
 // people who keep secrets in a manager.
 const (
@@ -414,7 +419,17 @@ func FromEnvironment(cfg Config) Config {
 	return cfg
 }
 
+// SharesGitKey reports whether the config names a Git key to copy to every
+// box.
+func (cfg Config) SharesGitKey() bool {
+	return cfg.GitSSHKeyPath != GitKeyNone
+}
+
 func expandConfigPaths(cfg Config) (Config, error) {
+	if !cfg.SharesGitKey() {
+		return cfg, nil
+	}
+
 	var err error
 
 	cfg.GitSSHKeyPath, err = expandOptionalPath(cfg.GitSSHKeyPath)

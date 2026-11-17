@@ -52,7 +52,7 @@ func (wiz Model) onClientSaved(msg clientSaved) Model {
 
 // unsaved is whether quitting now would lose something chosen in this run:
 // a setting that differs from what init started with, or a new Git key whose
-// public half is only shown after Write.
+// public key is only shown after Write.
 func (wiz Model) unsaved() bool {
 	return wiz.Config() != wiz.saved || wiz.gitPublicKey != ""
 }

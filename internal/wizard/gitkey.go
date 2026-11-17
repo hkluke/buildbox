@@ -17,7 +17,7 @@ const (
 	keygenFailed  = "Could not generate the key."
 )
 
-// GitKeyPath is where init generates the dedicated Git key.
+// GitKeyPath is where init generates the Git key.
 const GitKeyPath = "$HOME/.ssh/buildbox_git_ed25519"
 
 // displayKeyPath is a config path as the user would write it: $HOME expanded
@@ -101,8 +101,8 @@ type generatedGitKey struct {
 	public  string
 }
 
-// generateGitKey writes the dedicated Git key. The comment becomes the key's
-// title when the public half is pasted into GitHub.
+// generateGitKey writes the Git key. The comment becomes the key's
+// title when its public key is pasted into GitHub.
 func generateGitKey(privateConfig string) (generatedGitKey, string) {
 	private, problem := generateKey(privateConfig, gitKeyComment)
 	if problem != "" {

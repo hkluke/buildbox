@@ -199,8 +199,8 @@ func TestBoxKeyIsMadeOnTheBoxAndNeverReplaced(t *testing.T) {
 	}
 }
 
-// keychain warns at every login about a key without its public half. The
-// half is derived on the box from the key itself, so it cannot be the wrong
+// keychain warns at every login about a key without its public key. That
+// is derived on the box from the key itself, so it cannot be the wrong
 // one. A key with a passphrase gives none, and create must get past that
 // without a word, and without ssh-keygen asking anyone.
 func TestGitKeyGetsItsPublicHalfUnlessItHasAPassphrase(t *testing.T) {
@@ -238,7 +238,7 @@ func TestGitKeyGetsItsPublicHalfUnlessItHasAPassphrase(t *testing.T) {
 			derived, err := os.ReadFile(copied + ".pub") // #nosec G304 -- under t.TempDir.
 			if !check.derived {
 				if !os.IsNotExist(err) {
-					t.Fatalf("a public half without the passphrase: %q, %v", derived, err)
+					t.Fatalf("a public key without the passphrase: %q, %v", derived, err)
 				}
 
 				return
@@ -254,63 +254,114 @@ func TestGitKeyGetsItsPublicHalfUnlessItHasAPassphrase(t *testing.T) {
 
 // A server that is shown a key can tell whose it is, so the Git key goes to
 // the two hosts it was made for and to no other. Every other host gets the
-// box's own key, which ssh finds by its name, and IdentitiesOnly keeps the
-// ssh-agent, which holds the Git key, from offering it there as well.
-func TestBoxSSHConfigShowsTheGitKeyToItsHostsAlone(t *testing.T) {
+// box key, which ssh finds by its name, and IdentitiesOnly keeps the
+// ssh-agent, which holds the Git key, from offering it there as well. A box
+// that was given no Git key uses the box key for GitHub and GitLab too.
+func TestBoxSSHConfigGivesEachHostItsKey(t *testing.T) {
 	t.Parallel()
-
-	home := t.TempDir()
-	path := filepath.Join(home, ".ssh", "config")
-	writeFile(t, path, "an earlier config\n")
-
-	out, err := asBox(t, home, sshConfigCommand())
-	if err != nil {
-		t.Fatalf("%v\n%s", err, out)
-	}
-
-	assertPerm(t, path, openssh.FilePerm)
-
-	if written := readFile(t, path); written != boxSSHConfig {
-		t.Fatalf("config on the box:\n%s", written)
-	}
 
 	gitKey := "identityfile ~/.ssh/" + config.GitKeyName + "\n"
 	boxKey := "identityfile ~/.ssh/" + boxKeyName + "\n"
 
-	for _, check := range []struct{ host, offered, withheld string }{
-		{"github.com", gitKey, boxKey},
-		{"gitlab.com", gitKey, boxKey},
-		{"bitbucket.org", boxKey, gitKey},
-		{"example.com", boxKey, gitKey},
-		{"www.github.com", boxKey, gitKey},
+	type host struct{ name, offered, withheld string }
+
+	for _, check := range []struct {
+		name  string
+		cfg   config.Config
+		want  string
+		hosts []host
+	}{
+		{"with a Git key", config.Config{GitSSHKeyPath: "/keys/git"}, sharedKeySSHConfig, []host{
+			{"github.com", gitKey, boxKey},
+			{"gitlab.com", gitKey, boxKey},
+			{"bitbucket.org", boxKey, gitKey},
+			{"example.com", boxKey, gitKey},
+			{"www.github.com", boxKey, gitKey},
+		}},
+		{"without a Git key", config.Config{GitSSHKeyPath: config.GitKeyNone}, boxKeySSHConfig, []host{
+			{"github.com", boxKey, gitKey},
+			{"gitlab.com", boxKey, gitKey},
+			{"example.com", boxKey, gitKey},
+		}},
 	} {
-		resolved := resolveSSH(t, path, check.host)
-		if !strings.Contains(resolved, check.offered) || strings.Contains(resolved, check.withheld) ||
-			!strings.Contains(resolved, "identitiesonly yes\n") {
-			t.Fatalf("%s:\n%s", check.host, resolved)
-		}
+		t.Run(check.name, func(t *testing.T) {
+			t.Parallel()
+
+			home := t.TempDir()
+			path := filepath.Join(home, ".ssh", "config")
+			writeFile(t, path, "an earlier config\n")
+
+			out, err := asBox(t, home, sshConfigCommand(check.cfg))
+			if err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+
+			assertPerm(t, path, openssh.FilePerm)
+
+			if written := readFile(t, path); written != check.want {
+				t.Fatalf("config on the box:\n%s", written)
+			}
+
+			for _, host := range check.hosts {
+				resolved := resolveSSH(t, path, host.name)
+				if !strings.Contains(resolved, host.offered) || strings.Contains(resolved, host.withheld) ||
+					!strings.Contains(resolved, "identitiesonly yes\n") {
+					t.Fatalf("%s:\n%s", host.name, resolved)
+				}
+			}
+		})
 	}
 }
 
+// create ends by showing the box key, read before any coding agent has run
+// on the box. With a Git key on the box that is something to do only for
+// another host. Without one it is what the box needs before it can push, so
+// the note says so and the pages to add it on follow.
 func TestCreateEndsWithTheBoxKey(t *testing.T) {
 	t.Parallel()
 
 	const public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISAMPLE agent@dev 2026-11-17"
 
-	var out bytes.Buffer
-
-	printCreateDone(createPlan{name: testBox, con: console.NewWriter(&out)}, time.Minute, false, public)
-
-	for _, want := range []string{
-		testBox + " is ready",
-		"ssh " + testBox,
-		"the box's own SSH key",
-		"register its public half",
-		public + "\n",
+	for _, check := range []struct {
+		name    string
+		gitKey  string
+		want    []string
+		without []string
+	}{
+		{
+			"with a Git key", "/keys/git",
+			[]string{"To let dev log in to a host other than GitHub or GitLab, add its box key there:\n"},
+			[]string{"no access", gitHubKeysURL},
+		},
+		{
+			"without a Git key", config.GitKeyNone,
+			[]string{
+				"dev has no access to any host yet. Add its box key wherever it should log in:\n",
+				gitHubKeysURL, gitLabKeysURL,
+			},
+			[]string{"other than GitHub"},
+		},
 	} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("missing %q in:\n%s", want, out.String())
-		}
+		t.Run(check.name, func(t *testing.T) {
+			t.Parallel()
+
+			var out bytes.Buffer
+
+			plan := createPlan{name: testBox, con: console.NewWriter(&out), cfg: config.Config{GitSSHKeyPath: check.gitKey}}
+			printCreateDone(plan, time.Minute, false, public)
+
+			for _, want := range append(check.want, testBox+" is ready", "ssh "+testBox, public+"\n") {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("missing %q in:\n%s", want, out.String())
+				}
+			}
+
+			for _, unwanted := range append(check.without, "public half", "own SSH key") {
+				if strings.Contains(out.String(), unwanted) {
+					t.Fatalf("unexpected %q in:\n%s", unwanted, out.String())
+				}
+			}
+		})
 	}
 }
 
