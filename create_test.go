@@ -4,13 +4,18 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hkluke/buildbox/internal/abort"
 	"github.com/hkluke/buildbox/internal/config"
 	"github.com/hkluke/buildbox/internal/console"
+	"github.com/hkluke/buildbox/internal/openssh"
 	"github.com/hkluke/buildbox/internal/tailscale"
 )
 
@@ -158,5 +163,226 @@ func TestCreateFailureKeepsTheStepError(t *testing.T) {
 	err = createFailure(context.Background(), nil, true, testBox)
 	if err != nil {
 		t.Fatalf("success: %v", err)
+	}
+}
+
+// The box's own key is made on the box and reported by create, which reads
+// it before any coding agent has run there. A second run must not replace
+// it: whoever registered the first key would be left with a dead one.
+func TestBoxKeyIsMadeOnTheBoxAndNeverReplaced(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	made := time.Date(2026, time.November, 17, 23, 30, 0, 0, time.UTC)
+
+	out, err := asBox(t, home, boxKeyCommand(testBox, made))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+
+	// The comment says which box and from when, since box names are reused.
+	public := strings.TrimSpace(out)
+	if !strings.HasPrefix(public, publicKeyPrefix) || !strings.HasSuffix(public, " agent@dev 2026-11-17") {
+		t.Fatalf("public key = %q", public)
+	}
+
+	assertPerm(t, filepath.Join(home, ".ssh"), openssh.DirPerm)
+	assertPerm(t, filepath.Join(home, ".ssh", boxKeyName), openssh.FilePerm)
+
+	again, err := asBox(t, home, boxKeyCommand(testBox, made.AddDate(0, 0, 1)))
+	if err == nil {
+		t.Fatalf("a second run made another key:\n%s", again)
+	}
+
+	if kept := readFile(t, filepath.Join(home, ".ssh", boxKeyName+".pub")); strings.TrimSpace(kept) != public {
+		t.Fatalf("the key changed: %q, was %q", kept, public)
+	}
+}
+
+// keychain warns at every login about a key without its public half. The
+// half is derived on the box from the key itself, so it cannot be the wrong
+// one. A key with a passphrase gives none, and create must get past that
+// without a word, and without ssh-keygen asking anyone.
+func TestGitKeyGetsItsPublicHalfUnlessItHasAPassphrase(t *testing.T) {
+	t.Parallel()
+
+	for _, check := range []struct {
+		name       string
+		passphrase string
+		derived    bool
+	}{
+		{"without a passphrase", "", true},
+		{"with a passphrase", "correct horse", false},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			t.Parallel()
+
+			source := filepath.Join(t.TempDir(), "key")
+
+			_, err := openssh.Run(t.Context(), "ssh-keygen", "-q", "-t", "ed25519", "-N", check.passphrase, "-f", source)
+			if err != nil {
+				t.Skip("no ssh-keygen to make a key with")
+			}
+
+			home := t.TempDir()
+			copied := filepath.Join(home, ".ssh", config.GitKeyName)
+			writeFile(t, copied, readFile(t, source))
+
+			out, err := asBox(t, home, gitKeyCommand())
+			if err != nil || out != "" {
+				t.Fatalf("err = %v, output = %q", err, out)
+			}
+
+			assertPerm(t, copied, openssh.FilePerm)
+
+			derived, err := os.ReadFile(copied + ".pub") // #nosec G304 -- under t.TempDir.
+			if !check.derived {
+				if !os.IsNotExist(err) {
+					t.Fatalf("a public half without the passphrase: %q, %v", derived, err)
+				}
+
+				return
+			}
+
+			want := strings.Fields(readFile(t, source+".pub"))[:2]
+			if err != nil || !slices.Equal(strings.Fields(string(derived))[:2], want) {
+				t.Fatalf("derived %q (%v), want %v", derived, err, want)
+			}
+		})
+	}
+}
+
+// A server that is shown a key can tell whose it is, so the Git key goes to
+// the two hosts it was made for and to no other. Every other host gets the
+// box's own key, which ssh finds by its name, and IdentitiesOnly keeps the
+// ssh-agent, which holds the Git key, from offering it there as well.
+func TestBoxSSHConfigShowsTheGitKeyToItsHostsAlone(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	path := filepath.Join(home, ".ssh", "config")
+	writeFile(t, path, "an earlier config\n")
+
+	out, err := asBox(t, home, sshConfigCommand())
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+
+	assertPerm(t, path, openssh.FilePerm)
+
+	if written := readFile(t, path); written != boxSSHConfig {
+		t.Fatalf("config on the box:\n%s", written)
+	}
+
+	gitKey := "identityfile ~/.ssh/" + config.GitKeyName + "\n"
+	boxKey := "identityfile ~/.ssh/" + boxKeyName + "\n"
+
+	for _, check := range []struct{ host, offered, withheld string }{
+		{"github.com", gitKey, boxKey},
+		{"gitlab.com", gitKey, boxKey},
+		{"bitbucket.org", boxKey, gitKey},
+		{"example.com", boxKey, gitKey},
+		{"www.github.com", boxKey, gitKey},
+	} {
+		resolved := resolveSSH(t, path, check.host)
+		if !strings.Contains(resolved, check.offered) || strings.Contains(resolved, check.withheld) ||
+			!strings.Contains(resolved, "identitiesonly yes\n") {
+			t.Fatalf("%s:\n%s", check.host, resolved)
+		}
+	}
+}
+
+func TestCreateEndsWithTheBoxKey(t *testing.T) {
+	t.Parallel()
+
+	const public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISAMPLE agent@dev 2026-11-17"
+
+	var out bytes.Buffer
+
+	printCreateDone(createPlan{name: testBox, con: console.NewWriter(&out)}, time.Minute, false, public)
+
+	for _, want := range []string{
+		testBox + " is ready",
+		"ssh " + testBox,
+		"the box's own SSH key",
+		"register its public half",
+		public + "\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in:\n%s", want, out.String())
+		}
+	}
+}
+
+// asBox runs a command the way create does on a box: in bash, as a user
+// whose home is the given directory, and with nothing to read.
+func asBox(t *testing.T, home, command string) (string, error) {
+	t.Helper()
+
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash to stand in for a box")
+	}
+
+	_, err = os.Stat(sshKeygen)
+	if err != nil {
+		t.Skip("no " + sshKeygen + " to stand in for a box")
+	}
+
+	// #nosec G204 -- bash from the PATH runs a command this program wrote.
+	cmd := exec.CommandContext(t.Context(), bash, "-c", command)
+
+	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+
+	out, err := cmd.Output()
+
+	return string(out), err
+}
+
+// resolveSSH is what ssh makes of a config for one host, without connecting.
+func resolveSSH(t *testing.T, configPath, host string) string {
+	t.Helper()
+
+	result, err := openssh.Run(t.Context(), "ssh", "-G", "-F", configPath, host)
+	if err != nil {
+		t.Skip("no ssh to read the config with")
+	}
+
+	return strings.ToLower(result.Stdout)
+}
+
+func assertPerm(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != want {
+		t.Fatalf("%s: %v, %v, want mode %v", path, info, err, want)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+
+	payload, err := os.ReadFile(path) // #nosec G304 -- a file a test put under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(payload)
+}
+
+// writeFile leaves the file readable by everyone, as scp may: it is the
+// command under test that has to close it.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+
+	err := os.MkdirAll(filepath.Dir(path), openssh.DirPerm)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(path, []byte(content), 0o644) // #nosec G306 -- on purpose, see above.
+	if err != nil {
+		t.Fatal(err)
 	}
 }

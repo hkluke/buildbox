@@ -47,6 +47,12 @@ const (
 	AgentUser = "agent"
 )
 
+// GitKeyName is the file in the agent user's ~/.ssh that holds the Git key.
+// It names what the key is for and not a type, since the key may be of any,
+// and it is none of the names ssh tries by itself, so no host is shown the
+// key unless the ssh config on the box says so.
+const GitKeyName = "git_key"
+
 // The OAuth client can come from the environment instead of the file, for
 // people who keep secrets in a manager.
 const (

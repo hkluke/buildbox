@@ -43,7 +43,7 @@ func TestWelcomeIsForTheAgentUsersInteractiveLogins(t *testing.T) {
 		// Ubuntu's own welcome is hushed for the agent user alone.
 		"  - ['runuser', '--user', 'agent', '--', 'touch', '/home/agent/.hushlogin']\n",
 		// keychain would otherwise follow the welcome with four lines of its own.
-		"      eval $(keychain --quiet --eval --agents ssh id_ed25519)\n",
+		"      eval $(keychain --quiet --eval --agents ssh " + config.GitKeyName + ")\n",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("missing %q\n%s", want, doc)

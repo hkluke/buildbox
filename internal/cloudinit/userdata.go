@@ -95,7 +95,7 @@ write_files:
   - path: /var/lib/buildbox/agent.bashrc
     permissions: "0644"
     content: |
-      eval $(keychain --quiet --eval --agents ssh id_ed25519)
+      eval $(keychain --quiet --eval --agents ssh __GIT_KEY__)
       export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
   # Disabling OpenSSH's units does not keep it off. cloud-init's network
   # unit wants sshd.service, so every boot starts it again, and systemd 256
@@ -179,6 +179,7 @@ func Render(cfg config.Config, name, authKey string) (string, error) {
 		"__TS_AUTHKEY__", authKey,
 		"__TS_TAG__", cfg.Tag,
 		"__NAME__", name,
+		"__GIT_KEY__", config.GitKeyName,
 		"__CODEX_PACKAGES__", codexPackages(tools),
 		"__WELCOME_FILES__", welcomeFiles(tools, name),
 		"__ANTIGRAVITY_FILES__", antigravityProfile(tools),

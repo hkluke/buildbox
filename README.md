@@ -94,6 +94,13 @@ Logging in as `agent` shows a short welcome in place of Ubuntu's own: the
 box's name and size, where the projects go, the coding tools on it, and a
 line when an update needs a restart. A command run over ssh prints none of it.
 
+A box holds two SSH keys. Your Git key is shown to github.com and gitlab.com
+and to no other host, since a server that is shown a key can tell whose it
+is; another Git host needs a `Host` entry in `~/.ssh/config` on the box. Every
+other host gets a key of the box's own, made on the box when it is created.
+That key opens nothing until you register its public half with a host, and
+`create` prints it when the box is ready.
+
 A box comes with git, Docker, a C toolchain, and Python 3, and with no
 language runtime. The agent installs the one a project needs in its own home,
 or builds in a container. Packages from apt are for `admin`:
@@ -209,7 +216,10 @@ A box gets only the credentials it needs:
 - a single-use Tailscale auth key (used once to join your tailnet, then no
   longer valid)
 - the Git key you choose (ideally a dedicated one, such as a deploy key;
-  `init` can generate it)
+  `init` can generate it), which the box shows to GitHub and GitLab alone
+- a key of its own for every other host, generated on the box, which never
+  leaves it. A host you register it with keeps it after the box is deleted,
+  so remove it there as well
 
 On your machine, buildbox keeps only the Tailscale OAuth client secret, in a
 credentials file readable by you alone. It can create auth keys for
