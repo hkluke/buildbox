@@ -90,9 +90,11 @@ your Git key, and the coding tools you chose. The tools are installed but not
 signed in: you sign in on the box, and buildbox never sees those credentials.
 `admin` has sudo.
 
-Logging in as `agent` shows a short welcome in place of Ubuntu's own: the
+Logging in shows a short welcome in place of Ubuntu's own. `agent` sees the
 box's name and size, where the projects go, the coding tools on it, and a
-line when an update needs a restart. A command run over ssh prints none of it.
+line when an update needs a restart. `admin` sees its own, in another color:
+how to install a package, how many updates wait, and the restart when one is
+needed. A command run over ssh prints none of it.
 
 A box logs in to other hosts with up to two keys:
 

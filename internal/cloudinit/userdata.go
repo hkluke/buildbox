@@ -145,9 +145,11 @@ runcmd:
   - ['sh', '-c', 'cat /var/lib/buildbox/agent.bashrc >> /home/__AGENT_USER__/.bashrc']
   - ['chown', '__AGENT_USER__:__AGENT_USER__', '/home/__AGENT_USER__/.bashrc']
   # Ubuntu greets a login with some thirty lines of links, load figures, and
-  # notices. This file keeps them from the agent user, whose welcome is the
-  # one written above. admin, who looks after the system, still gets them.
+  # notices. These files keep them from both users, whose welcome is the one
+  # written above. admin's carries on the two that call for something: the
+  # updates that wait, and a restart one of them needs.
   - ['runuser', '--user', '__AGENT_USER__', '--', 'touch', '/home/__AGENT_USER__/.hushlogin']
+  - ['runuser', '--user', '__ADMIN_USER__', '--', 'touch', '/home/__ADMIN_USER__/.hushlogin']
   # Rootless Docker for the agent user. The packages start a root daemon;
   # stop it so the only Docker on the box runs as the agent user.
   - ['systemctl', 'disable', '--now', 'docker.service', 'docker.socket', 'containerd.service']
