@@ -298,11 +298,13 @@ bills and the monthly cap, gross. Every box boots %[2]s, which is
 not a setting.
 
 Agent is the Git key, the Git identity, and the coding tools. The Git key
-is a new ed25519 key, a key already on this machine, or a path you type. A
-generated one is shown at the end and put on the clipboard, with the GitHub
-and GitLab pages it goes to. There is no login key: logins over the tailnet
-are decided by the policy, through Tailscale SSH. Coding tools are installed
-for the agent user; OpenCode is the usual choice.
+is one key that every box uses for GitHub and GitLab: a new ed25519 key, a
+key already on this machine, or a path you type. A new one is shown at the
+end and put on the clipboard, with the GitHub and GitLab pages to add it on.
+Or boxes share no Git key, and each uses its own box key there, which create
+shows. There is no login key: logins over the tailnet are decided by the
+policy, through Tailscale SSH. Coding tools are installed for the agent
+user; OpenCode is the usual choice.
 
 Tailnet adds the three lines your policy needs for boxes tagged %[1]s and
 the OAuth client that mints a one-time auth key for each create. With an API

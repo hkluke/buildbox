@@ -16,22 +16,24 @@ const (
 	ToolNone        = "none"
 )
 
-// Tool is one CLI installed for the agent user. Command is the upstream
-// installer and never includes a value from the config file.
+// Tool is one CLI installed for the agent user. Binary is what the agent
+// user types to start it. Command is the upstream installer and never
+// includes a value from the config file.
 type Tool struct {
 	ID      string
 	Name    string
+	Binary  string
 	Command string
 }
 
 // Tools lists every coding tool buildbox can install, in display order.
 func Tools() []Tool {
 	return []Tool{
-		{ToolOpenCode, "OpenCode", "curl -fsSL https://opencode.ai/v2/install | bash"},
-		{ToolClaude, "Claude Code", "curl -fsSL https://claude.ai/install.sh | bash"},
-		{ToolGrok, "Grok Build", "curl -fsSL https://x.ai/cli/install.sh | bash"},
-		{ToolCodex, "Codex", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"},
-		{ToolAntigravity, "Antigravity CLI", "curl -fsSL https://antigravity.google/cli/install.sh | bash"},
+		{ToolOpenCode, "OpenCode", "opencode", "curl -fsSL https://opencode.ai/v2/install | bash"},
+		{ToolClaude, "Claude Code", "claude", "curl -fsSL https://claude.ai/install.sh | bash"},
+		{ToolGrok, "Grok Build", "grok", "curl -fsSL https://x.ai/cli/install.sh | bash"},
+		{ToolCodex, "Codex", "codex", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"},
+		{ToolAntigravity, "Antigravity CLI", "agy", "curl -fsSL https://antigravity.google/cli/install.sh | bash"},
 	}
 }
 

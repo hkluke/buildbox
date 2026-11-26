@@ -217,3 +217,33 @@ func TestUserDataLeavesNoOpenSSHServer(t *testing.T) {
 		t.Fatalf("the OpenSSH server is removed after the tailnet join:\n%s", doc)
 	}
 }
+
+// keychain is on a box to load the Git key. On a box that is given none it
+// would warn at every login that the key is missing, so the line goes, and
+// the line after it must still be where the document expects it.
+func TestUserDataLoadsTheGitKeyOnlyWhereThereIsOne(t *testing.T) {
+	t.Parallel()
+
+	const (
+		keychain = "      eval $(keychain --quiet --eval --agents ssh " + config.GitKeyName + ")\n"
+		docker   = "    content: |\n      export DOCKER_HOST="
+	)
+
+	shared, err := Render(config.Config{GitSSHKeyPath: "/keys/git", Tag: config.DefaultTag}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(shared, keychain) {
+		t.Fatalf("no keychain line with a Git key:\n%s", shared)
+	}
+
+	alone, err := Render(config.Config{GitSSHKeyPath: config.GitKeyNone, Tag: config.DefaultTag}, "box", "tskey")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(alone, "eval $(keychain") || !strings.Contains(alone, docker) {
+		t.Fatalf("without a Git key:\n%s", alone)
+	}
+}

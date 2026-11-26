@@ -90,6 +90,26 @@ your Git key, and the coding tools you chose. The tools are installed but not
 signed in: you sign in on the box, and buildbox never sees those credentials.
 `admin` has sudo.
 
+Logging in shows a short welcome in place of Ubuntu's own. `agent` sees the
+box's name and size, where the projects go, the coding tools on it, and a
+line when an update needs a restart. `admin` sees its own, in another color:
+how to install a package, how many updates wait, and the restart when one is
+needed. A command run over ssh prints none of it.
+
+A box logs in to other hosts with up to two keys:
+
+- The **Git key** is one key that every box gets a copy of. You add its
+  public key to GitHub or GitLab once, and every new box can push right away.
+  A box shows it to github.com and gitlab.com and to no other host, since a
+  server that is shown a key can tell whose it is. Another Git host needs a
+  `Host` entry in `~/.ssh/config` on the box.
+- The **box key** is made on each box and never leaves it. A box uses it for
+  every other host. It opens nothing until you add its public key to a host,
+  and `create` shows it when the box is ready.
+
+In `init` you can also choose to share no Git key. Each box then uses its box
+key for GitHub and GitLab too, and you add that key for every new box.
+
 A box comes with git, Docker, a C toolchain, and Python 3, and with no
 language runtime. The agent installs the one a project needs in its own home,
 or builds in a container. Packages from apt are for `admin`:
@@ -204,8 +224,11 @@ A box gets only the credentials it needs:
 
 - a single-use Tailscale auth key (used once to join your tailnet, then no
   longer valid)
-- the Git key you choose (ideally a dedicated one, such as a deploy key;
-  `init` can generate it)
+- the Git key, unless you chose to share none. Use a key made for this, not
+  your own; `init` can generate it. The box shows it to GitHub and GitLab
+  alone
+- its box key, generated on the box, which never leaves it. A host you add
+  it to keeps it after the box is deleted, so remove it there as well
 
 On your machine, buildbox keeps only the Tailscale OAuth client secret, in a
 credentials file readable by you alone. It can create auth keys for

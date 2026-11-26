@@ -7,8 +7,9 @@
 [tailscale]
 tag = "tag:buildbox"
 
-# Git identity, and the key copied to the agent after boot.
-# $HOME and ~/ are expanded when the file is read.
+# Git identity, and the Git key: one key copied to every box, which
+# uses it for GitHub and GitLab. $HOME and ~/ are expanded when the file
+# is read. "none" copies no key, and each box uses its own key there.
 [git]
 ssh_key = "$HOME/.ssh/buildbox_git_ed25519"
 name = "Your Name"

@@ -159,8 +159,8 @@ func TestRenderConfigQuotesAndWritesTheTailscaleSection(t *testing.T) {
 	body := Render(Config{
 		GitSSHKeyPath:     `$HOME/keys/quote"key`,
 		GitUserName:       "Ada Lovelace",
-		GitUserEmail:      "ada@example.com",
-		FirewallName:      "buildbox-tailscale-only",
+		GitUserEmail:      gitEmail,
+		FirewallName:      firewall,
 		ServerType:        DefaultType,
 		ServerLoc:         SeedLocation,
 		Tag:               DefaultTag,
@@ -395,5 +395,55 @@ auth_key = "tskey-auth-old"
 	_, err = LoadSeed(filepath.Join(t.TempDir(), "missing.toml"))
 	if err == nil {
 		t.Fatal("a missing file is still an error")
+	}
+}
+
+// Sharing no Git key is written on purpose, as "none". It survives the file
+// as it is, with no path made of it, and create accepts it. A file that
+// leaves the key out is still refused, so a slip cannot make boxes that
+// have no way to push.
+func TestNoSharedGitKeySurvivesTheConfigFile(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		GitSSHKeyPath: GitKeyNone,
+		GitUserName:   gitName,
+		GitUserEmail:  gitEmail,
+		FirewallName:  firewall,
+		ServerType:    DefaultType,
+		ServerLoc:     SeedLocation,
+		Tag:           DefaultTag,
+	}
+
+	body := Render(cfg)
+	if !strings.Contains(body, "ssh_key = \"none\"\n") {
+		t.Fatalf("rendered:\n%s", body)
+	}
+
+	path := filepath.Join(t.TempDir(), userConfigName)
+	writeTestFile(t, path, body)
+
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if loaded.GitSSHKeyPath != GitKeyNone || loaded.SharesGitKey() {
+		t.Fatalf("loaded git.ssh_key = %q", loaded.GitSSHKeyPath)
+	}
+
+	err = loaded.RequireCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.GitSSHKeyPath = ""
+	if cfg.RequireCreate() == nil {
+		t.Fatal("a config without git.ssh_key was accepted")
+	}
+
+	cfg.GitSSHKeyPath = "/keys/git"
+	if !cfg.SharesGitKey() {
+		t.Fatal("a path is a Git key to share")
 	}
 }

@@ -76,12 +76,15 @@ users:
 
 # write-files runs before users-groups, so this cannot target the home
 # directory. runcmd appends it after the skel .bashrc exists. DOCKER_HOST is
-# for tools that ignore the docker CLI context, such as Docker SDKs.
+# for tools that ignore the docker CLI context, such as Docker SDKs. keychain
+# is there for a Git key with a passphrase, to ask for it once; it is quiet
+# so that a login shows the welcome below and not four lines about the agent
+# it found. A box without a Git key has no such line.
 write_files:
   - path: /var/lib/buildbox/agent.bashrc
     permissions: "0644"
     content: |
-      eval $(keychain --eval --agents ssh id_ed25519)
+      eval $(keychain --quiet --eval --agents ssh git_key)
       export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
   # Disabling OpenSSH's units does not keep it off. cloud-init's network
   # unit wants sshd.service, so every boot starts it again, and systemd 256
@@ -96,6 +99,242 @@ write_files:
   - path: /etc/systemd/system-generators/systemd-ssh-generator
     permissions: "0644"
     content: ""
+  # The welcome at login: the wordmark, and what the box holds for the agent
+  # user or what there is to look after for the admin user. Every login
+  # shell reads the first file, which runs the second for an interactive
+  # login of one of the two, so a command, scp, and rsync get no word of it.
+  # Both are ASCII: the script spells its block characters in octal.
+  - path: /etc/profile.d/buildbox-welcome.sh
+    permissions: "0644"
+    content: |
+      # buildbox's welcome for the agent user and the admin user, at an
+      # interactive login and nowhere else. A command, scp, and rsync run through a
+      # login shell too, and a word printed there would end up in their output.
+      # tmux and screen start a login shell in every pane. Any other user, root
+      # among them, gets none.
+      case $- in
+        *i*)
+          if [ -z "${TMUX:-}${STY:-}" ] && [ -t 1 ]; then
+            case $(id -un) in
+              agent) /usr/local/lib/buildbox/welcome agent ;;
+              admin) /usr/local/lib/buildbox/welcome admin ;;
+            esac
+          fi
+          ;;
+      esac
+  - path: /usr/local/lib/buildbox/welcome
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # What the agent user and the admin user see at an interactive login, in
+      # place of Ubuntu's own welcome, which ~/.hushlogin keeps quiet. The hook
+      # says whose login it is. The Box, Updates, and Restart rows are read at each
+      # login; everything else was fixed when buildbox created this box.
+
+      user=${1:-agent}
+
+      escape=$'\033'
+      # Octal, so that the cloud-init document that carries this file stays ASCII:
+      # the upper half block, the lower half block, the full block, and the middle
+      # dot.
+      upper=$'\342\226\200' lower=$'\342\226\204' full=$'\342\226\210' dot=$'\302\267'
+
+      # Nothing on the box can ask the terminal which colors it has: TERM reads
+      # xterm-256color on nearly every one, with 24-bit color or without, and SSH
+      # does not pass COLORTERM on unless told to. Nearly every terminal has 24-bit
+      # color, so only one that says it has no color at all gets none.
+      if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-dumb}" = dumb ]; then
+        color='' dim='' bold='' code='' plain=''
+      else
+        color=yes dim="${escape}[2m" bold="${escape}[1m" code="${escape}[33m" plain="${escape}[0m"
+      fi
+
+      # The wordmark runs from one color at its left to another at its right. For
+      # the agent user that is teal (#2BB8A0) to mint (#B4ECDF), as the wizard's
+      # does. For the admin user it is brass (#D69634) to cream (#F8E8C8), the
+      # wizard's color for a command, so the login that has sudo is not taken for
+      # the other.
+      if [ "$user" = admin ]; then
+        left=(214 150 52) right=(248 232 200) shadow='92;66;24'
+      else
+        left=(43 184 160) right=(180 236 223) shadow='23;87;79'
+      fi
+
+      # shade sets ink to the color of one pixel, at paint's column: # is the
+      # wordmark, : is its shadow, and anything else is the terminal's own
+      # background. Without color the shadow goes, since it would only thicken the
+      # letters.
+      shade() {
+        case $1 in
+          '#')
+            ink="38;2;$((left[0] + ((right[0] - left[0]) * column + span / 2) / span))"
+            ink+=";$((left[1] + ((right[1] - left[1]) * column + span / 2) / span))"
+            ink+=";$((left[2] + ((right[2] - left[2]) * column + span / 2) / span))"
+            ;;
+          ':') ink=${color:+38;2;$shadow} ;;
+          *) ink='' ;;
+        esac
+      }
+
+      # paint draws the picture on its input. A line of text holds two rows of
+      # pixels, one in the upper half of each cell and one in the lower, so the
+      # pixels come out square.
+      paint() {
+        local above below line span column ink over under block colors
+
+        while IFS= read -r above && IFS= read -r below; do
+          span=$((${#above} - 1)) line=''
+
+          for ((column = 0; column <= span; column++)); do
+            shade "${above:column:1}"
+            over=$ink
+            shade "${below:column:1}"
+            under=$ink
+
+            case ${over:+o}${under:+u} in
+              o) block=$upper colors=$over ;;
+              u) block=$lower colors=$under ;;
+              ou)
+                if [ "$over" = "$under" ]; then
+                  block=$full colors=$over
+                else
+                  block=$upper colors="$over;${under/#38/48}"
+                fi
+                ;;
+              *)
+                line+=' '
+                continue
+                ;;
+            esac
+
+            line+="${color:+${escape}[${colors}m}$block$plain"
+          done
+
+          # Without its shadow the picture's last line is empty.
+          line=${line%"${line##*[! ]}"}
+          if [ -n "$line" ]; then
+            printf '  %s\n' "$line"
+          fi
+        done
+      }
+
+      row() {
+        printf '  %s%-11s%s%s\n' "$dim" "$1" "$plain" "$2"
+      }
+
+      # The wide picture is 79 columns with its margin and the narrow one 35. A
+      # session that came without a window size says 0 and gets the wide one.
+      columns=$(stty size 2>/dev/null) columns=${columns#* }
+
+      if [ "${columns:-0}" -eq 0 ] || [ "$columns" -ge 80 ]; then
+        echo
+        paint <<'PICTURE'
+      .........................................................................##.#
+      .........................................................................##..
+      ##......................##........##..##..............................##.....
+      ##:.................##..##:.......##:.##:.............................##....#
+      ##:.................##:.##:.......##:.##:..........................##........
+      ##:..................::.##:.......##:.##:..........................##.....#..
+      #######...##....##..##..##:..#######:.#######....######...###..........##....
+      ########..##:...##:.##:.##:.########:.########..########...###..##.....##....
+      ##::::##:.##:...##:.##:.##:.##::::##:.##::::##:.##::::##:...######:..........
+      ##:...##:.##:...##:.##:.##:.##:...##:.##:...##:.##:...##:....####::..........
+      ##:...##:.##:...##:.##:.##:.##:...##:.##:...##:.##:...##:....####:...........
+      ##:...##:.##:...##:.##:.##:.##:...##:.##:...##:.##:...##:...######...........
+      ########:.########:.##:.##:.########:.########:.########:..###::###..........
+      #######::..#######:.##:.##:..#######:.#######::..######::.###::..###.........
+      .:::::::....:::::::..::..::...:::::::..:::::::....::::::...:::....:::........
+      .............................................................................
+      PICTURE
+      elif [ "$columns" -ge 36 ]; then
+        echo
+        paint <<'PICTURE'
+      #.........#.#....#.#.............
+      #...........#....#.#.............
+      ####.#..#.#.#.####.####.####.#..#
+      #..#.#..#.#.#.#..#.#..#.#..#..##.
+      #..#.#..#.#.#.#..#.#..#.#..#..##.
+      ####.####.#.#.####.####.####.#..#
+      PICTURE
+      fi
+
+      if [ "$user" = admin ]; then
+        tagline='You are admin, the user with sudo on this box.'
+      else
+        tagline='Let your agent think inside the box.'
+      fi
+
+      printf '\n  %s\n\n' "$dim$tagline$plain"
+
+      box="$bold$(hostname)$plain $dot $(. /etc/os-release && printf '%s' "$PRETTY_NAME")"
+
+      cores="$(nproc) cores"
+      box+=" $dot ${cores/#1 cores/1 core}"
+
+      # Installed memory is the size the box was rented with. MemTotal is what the
+      # kernel left of it, which rounds to another number on a large box.
+      memory=$(lsmem --bytes --summary=only 2>/dev/null | sed --quiet 's/^Total online memory: *//p')
+      if [ -n "$memory" ]; then
+        box+=" $dot $(((memory + (1 << 29)) >> 30)) GB"
+      fi
+
+      free=$(df --output=avail --block-size=G /)
+      box+=" $dot ${free//[!0-9]/} GB free"
+
+      row Box "$box"
+
+      # Ubuntu raises this flag when an update, a new kernel for one, takes effect
+      # only after a restart. Only the admin user can restart the box, so the row
+      # names the command for where its reader is.
+      restart() {
+        if [ -e /run/reboot-required ]; then
+          row Restart "needed by an update: $code$1$plain"
+        fi
+      }
+
+      if [ "$user" = admin ]; then
+        row Packages "${code}sudo apt install NAME$plain"
+
+        # Ubuntu's welcome tells how many updates wait, from a note apt rewrites
+        # whenever it has run. Counting them here would take seconds at every
+        # login, so this reads the note. Without the note, without a count in it,
+        # or with the count worded another way, there is no row.
+        note=/var/lib/update-notifier/updates-available
+
+        # counted prints the number at the start of the note's line that goes on
+        # as its argument says.
+        counted() {
+          sed --quiet --regexp-extended '/^([0-9]+) '"$1"'\.$/{s//\1/p;q}' "$note" 2>/dev/null
+        }
+
+        waiting=$(counted 'updates? can be applied immediately')
+        security=$(counted 'of these updates (is a|are) standard security updates?')
+
+        if [ "${waiting:-0}" -gt 0 ]; then
+          updates="$waiting waiting"
+          if [ "${security:-0}" -gt 0 ]; then
+            updates+=", $security for security"
+          fi
+
+          row Updates "$updates: ${code}sudo apt upgrade$plain"
+        fi
+
+        restart 'sudo reboot'
+        row Agent "works without sudo: ${code}ssh agent@build-x$plain"
+      else
+        row Projects '~/projects'
+
+        tools="${code}claude$plain, ${code}codex$plain"
+        if [ -n "$tools" ]; then
+          row Tools "$tools"
+        fi
+
+        row Docker 'rootless, as agent'
+        row Sudo "admin has it: ${code}ssh admin@build-x$plain"
+        restart 'ssh admin@build-x sudo reboot'
+      fi
+
+      echo
 
 runcmd:
   # Without --ssh-key, Hetzner sets a root password and prints/emails it.
@@ -129,6 +368,12 @@ runcmd:
   - ['chown', 'agent:agent', '/home/agent/projects']
   - ['sh', '-c', 'cat /var/lib/buildbox/agent.bashrc >> /home/agent/.bashrc']
   - ['chown', 'agent:agent', '/home/agent/.bashrc']
+  # Ubuntu greets a login with some thirty lines of links, load figures, and
+  # notices. These files keep them from both users, whose welcome is the one
+  # written above. admin's carries on the two that call for something: the
+  # updates that wait, and a restart one of them needs.
+  - ['runuser', '--user', 'agent', '--', 'touch', '/home/agent/.hushlogin']
+  - ['runuser', '--user', 'admin', '--', 'touch', '/home/admin/.hushlogin']
   # Rootless Docker for the agent user. The packages start a root daemon;
   # stop it so the only Docker on the box runs as the agent user.
   - ['systemctl', 'disable', '--now', 'docker.service', 'docker.socket', 'containerd.service']

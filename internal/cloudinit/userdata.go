@@ -88,13 +88,15 @@ users:
 
 # write-files runs before users-groups, so this cannot target the home
 # directory. runcmd appends it after the skel .bashrc exists. DOCKER_HOST is
-# for tools that ignore the docker CLI context, such as Docker SDKs.
+# for tools that ignore the docker CLI context, such as Docker SDKs. keychain
+# is there for a Git key with a passphrase, to ask for it once; it is quiet
+# so that a login shows the welcome below and not four lines about the agent
+# it found. A box without a Git key has no such line.
 write_files:
   - path: /var/lib/buildbox/agent.bashrc
     permissions: "0644"
     content: |
-      eval $(keychain --eval --agents ssh id_ed25519)
-      export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+__KEYCHAIN__      export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
   # Disabling OpenSSH's units does not keep it off. cloud-init's network
   # unit wants sshd.service, so every boot starts it again, and systemd 256
   # and later give an installed sshd a unix socket any local user can open.
@@ -108,6 +110,7 @@ write_files:
   - path: /etc/systemd/system-generators/systemd-ssh-generator
     permissions: "0644"
     content: ""
+__WELCOME_FILES__
 __ANTIGRAVITY_FILES__
 runcmd:
   # Without --ssh-key, Hetzner sets a root password and prints/emails it.
@@ -141,6 +144,12 @@ runcmd:
   - ['chown', '__AGENT_USER__:__AGENT_USER__', '/home/__AGENT_USER__/projects']
   - ['sh', '-c', 'cat /var/lib/buildbox/agent.bashrc >> /home/__AGENT_USER__/.bashrc']
   - ['chown', '__AGENT_USER__:__AGENT_USER__', '/home/__AGENT_USER__/.bashrc']
+  # Ubuntu greets a login with some thirty lines of links, load figures, and
+  # notices. These files keep them from both users, whose welcome is the one
+  # written above. admin's carries on the two that call for something: the
+  # updates that wait, and a restart one of them needs.
+  - ['runuser', '--user', '__AGENT_USER__', '--', 'touch', '/home/__AGENT_USER__/.hushlogin']
+  - ['runuser', '--user', '__ADMIN_USER__', '--', 'touch', '/home/__ADMIN_USER__/.hushlogin']
   # Rootless Docker for the agent user. The packages start a root daemon;
   # stop it so the only Docker on the box runs as the agent user.
   - ['systemctl', 'disable', '--now', 'docker.service', 'docker.socket', 'containerd.service']
@@ -172,9 +181,21 @@ func Render(cfg config.Config, name, authKey string) (string, error) {
 		"__TS_AUTHKEY__", authKey,
 		"__TS_TAG__", cfg.Tag,
 		"__NAME__", name,
+		"__KEYCHAIN__", keychainLine(cfg),
 		"__CODEX_PACKAGES__", codexPackages(tools),
+		"__WELCOME_FILES__", welcomeFiles(tools, name),
 		"__ANTIGRAVITY_FILES__", antigravityProfile(tools),
 	).Replace(userDataDocument(codingToolLines(tools))), nil
+}
+
+// keychainLine loads the Git key into an ssh-agent at each interactive shell.
+// Without a Git key it would only warn that the key is missing.
+func keychainLine(cfg config.Config) string {
+	if !cfg.SharesGitKey() {
+		return ""
+	}
+
+	return "      eval $(keychain --quiet --eval --agents ssh " + config.GitKeyName + ")\n"
 }
 
 // antigravityProfilePath is agy's AppArmor profile, among the ones AppArmor

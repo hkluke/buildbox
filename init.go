@@ -243,7 +243,11 @@ func writeInit(ctx context.Context, done wizard.Model, dest string, client *hclo
 		}
 	}
 
-	if public != "" {
+	switch {
+	case !cfg.SharesGitKey():
+		con.Blank()
+		con.Note("No Git key to add now. Each box shows its box key when it is created.")
+	case public != "":
 		showGitKey(ctx, con, public)
 	}
 
@@ -273,7 +277,7 @@ func firewallFailure(err error, cfg config.Config, newKey bool) error {
 			key = cfg.GitSSHKeyPath
 		}
 
-		hint += "\nThe new Git key's public half is in " + console.DisplayPath(key) + ".pub; add it to your git host."
+		hint += "\nThe new Git key's public key is in " + console.DisplayPath(key) + ".pub; add it to GitHub or GitLab."
 	}
 
 	return abort.WithHint(err, hint)
@@ -302,19 +306,24 @@ func writeCredentials(con *console.Console, path string, cfg config.Config) erro
 // showGitKey hands the new key over: on the clipboard when a clipboard tool
 // is installed, and always on screen, with the pages it is pasted into.
 func showGitKey(ctx context.Context, con *console.Console, public string) {
-	lead := "Add the agent's Git key as a new SSH key:"
+	lead := "Add the Git key to GitHub or GitLab. You do this once, for all boxes:"
 	if wizard.CopyToClipboard(ctx, public) {
-		lead = "The agent's Git key is on the clipboard. Paste it as a new SSH key:"
+		lead = "The Git key is on the clipboard. Add it to GitHub or GitLab, once for all boxes:"
 	}
 
 	con.Blank()
 	con.Note(lead)
 	con.Command(public)
 	con.Blank()
-	con.Commands([][2]string{
+	con.Commands(gitHostPages())
+}
+
+// gitHostPages are the pages a public key is added on.
+func gitHostPages() [][2]string {
+	return [][2]string{
 		{gitHubKeysURL, "GitHub"},
 		{gitLabKeysURL, "GitLab"},
-	})
+	}
 }
 
 func initDestination() (string, bool, error) {
@@ -375,8 +384,9 @@ func fillInitDefaults(ctx context.Context, cfg config.Config) config.Config {
 		cfg.Tag = config.DefaultTag
 	}
 
-	// Without a dedicated key, init suggests generating one rather than
-	// copying a personal key to the box.
+	// The form starts from the Git key init generated in an earlier run, or
+	// else from a key found on this machine, which it offers and does not
+	// recommend: that one is most likely the user's own.
 	if cfg.GitSSHKeyPath == "" {
 		cfg.GitSSHKeyPath = firstHomePath(wizard.GitKeyPath, "$HOME/.ssh/github_ed25519")
 	}

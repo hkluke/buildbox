@@ -245,14 +245,27 @@ func (wiz Model) boxComplete() bool {
 	return ok && place.Creatable
 }
 
+// gitKeyFact is the Git key as the overview shows it.
+func (wiz Model) gitKeyFact() string {
+	if wiz.gitKey == config.GitKeyNone {
+		return noGitKeyFact
+	}
+
+	return console.DisplayPath(wiz.gitKey)
+}
+
 // agentProblem is what the Agent section still needs, or empty.
 func (wiz Model) agentProblem() string {
 	switch {
+	case wiz.gitKey == config.GitKeyNone:
+		// Boxes share no Git key, which is an answer and not a gap.
 	case strings.TrimSpace(wiz.gitKey) == "":
 		return "No Git key yet. Open to generate one."
 	case config.InvalidPrivateKey(wiz.gitKey) != "":
 		return "No usable Git key at " + console.DisplayPath(wiz.gitKey) + ". Open to generate or choose one."
-	case config.InvalidPersonName(wiz.gitName) != "" || config.InvalidEmail(wiz.gitEmail) != "":
+	}
+
+	if config.InvalidPersonName(wiz.gitName) != "" || config.InvalidEmail(wiz.gitEmail) != "" {
 		return "Git name or email is missing."
 	}
 
@@ -553,7 +566,7 @@ func (wiz Model) agentRow() pickerRow {
 	}
 
 	row := wiz.hubRow(hubAgent, sectionName(sectionAgent),
-		hubFact{label: "git key", value: console.DisplayPath(wiz.gitKey)},
+		hubFact{label: "git key", value: wiz.gitKeyFact()},
 		hubFact{label: "git name", value: wiz.gitName},
 		hubFact{label: "git email", value: wiz.gitEmail},
 		hubFact{label: "tools", value: tools},

@@ -17,19 +17,21 @@ func TestUserDataMatchesGolden(t *testing.T) {
 	t.Parallel()
 
 	for _, check := range []struct {
-		name  string
-		tools string
+		name   string
+		tools  string
+		gitKey string
 	}{
-		{"default", ""},
-		{"codex-claude", config.ToolCodex + " " + config.ToolClaude},
-		{"antigravity", config.ToolAntigravity},
-		{"none", config.ToolNone},
+		{"default", "", ""},
+		{"codex-claude", config.ToolCodex + " " + config.ToolClaude, ""},
+		{"antigravity", config.ToolAntigravity, ""},
+		{"none", config.ToolNone, ""},
+		{"no-git-key", "", config.GitKeyNone},
 	} {
 		t.Run(check.name, func(t *testing.T) {
 			t.Parallel()
 
 			doc, err := Render(
-				config.Config{AITools: check.tools, Tag: config.DefaultTag},
+				config.Config{AITools: check.tools, Tag: config.DefaultTag, GitSSHKeyPath: check.gitKey},
 				"build-x", "tskey-auth-SAMPLE",
 			)
 			if err != nil {

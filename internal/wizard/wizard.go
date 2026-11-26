@@ -50,6 +50,7 @@ const (
 	gitChoiceUse   = "use"
 	gitChoiceNew   = "new"
 	gitChoicePath  = "path"
+	gitChoiceNone  = "none"
 	keysChoiceMint = "mint"
 	keysChoiceAsk  = "ask"
 	accessToken    = "token"
@@ -298,7 +299,7 @@ func (wiz Model) NeedsFirewall() bool {
 	return !wiz.cat.Firewall.Exists
 }
 
-// NewGitPublicKey is the public half of a Git key generated in this run, or
+// NewGitPublicKey is the public key of a Git key generated in this run, or
 // empty. init shows it once the config is written, to add to the git host.
 func (wiz Model) NewGitPublicKey() string {
 	return wiz.gitPublicKey
@@ -1015,7 +1016,7 @@ func (wiz Model) fieldValue() string {
 		stepToken:       wiz.token,
 		stepOAuthID:     wiz.oauthID,
 		stepOAuthSecret: wiz.oauthSecret,
-		stepGitKey:      wiz.gitKey,
+		stepGitKey:      wiz.gitPath(),
 		stepGitIdentity: wiz.gitName,
 	}
 
@@ -1113,16 +1114,50 @@ func (wiz Model) commitPath(value string) (Model, string) {
 	return wiz, ""
 }
 
+// gitPath is the Git key's path, and empty when boxes share no Git key.
+func (wiz Model) gitPath() string {
+	if wiz.gitKey == config.GitKeyNone {
+		return ""
+	}
+
+	return wiz.gitKey
+}
+
+// gitKeyFound reports whether the form holds a usable key to offer as it is.
+func (wiz Model) gitKeyFound() bool {
+	return wiz.gitPath() != "" && config.InvalidPrivateKey(wiz.gitKey) == ""
+}
+
+// gitKeyChosen reports whether the key the form holds is one to stay with:
+// the key a config already names, or the one init generated in an earlier
+// run. Any other is a key init came across on this machine, most likely the
+// user's own, which is offered and never recommended.
+func (wiz Model) gitKeyChosen() bool {
+	if !wiz.gitKeyFound() {
+		return false
+	}
+
+	held, heldErr := config.ExpandPath(wiz.gitKey)
+	made, madeErr := config.ExpandPath(GitKeyPath)
+
+	return wiz.replacing || (heldErr == nil && madeErr == nil && held == made)
+}
+
 func (wiz Model) openGitChoice(reset bool) (Model, tea.Cmd) {
 	wiz.gitEditing = false
 	wiz.gitSuggest = gitChoiceNew
 
-	if config.InvalidPrivateKey(wiz.gitKey) == "" {
+	if wiz.gitKeyChosen() {
 		wiz.gitSuggest = gitChoiceUse
 	}
 
 	if reset || wiz.gitChoice == "" {
 		wiz.gitChoice = wiz.gitSuggest
+
+		// A config that shares no Git key opens on that answer.
+		if wiz.gitKey == config.GitKeyNone {
+			wiz.gitChoice = gitChoiceNone
+		}
 	}
 
 	wiz.input.Blur()
@@ -1140,7 +1175,7 @@ func (wiz Model) editGitPath() (Model, tea.Cmd) {
 func (wiz Model) confirmGit() (Model, tea.Cmd) {
 	switch wiz.gitChoice {
 	case gitChoiceUse:
-		if config.InvalidPrivateKey(wiz.gitKey) == "" {
+		if wiz.gitKeyFound() {
 			return wiz.advance()
 		}
 
@@ -1149,6 +1184,12 @@ func (wiz Model) confirmGit() (Model, tea.Cmd) {
 		return wiz.generateGit()
 	case gitChoicePath:
 		return wiz.editGitPath()
+	case gitChoiceNone:
+		// A key generated earlier in this run is not one to add anywhere now.
+		wiz.gitKey = config.GitKeyNone
+		wiz.gitPublicKey = ""
+
+		return wiz.advance()
 	default:
 		return wiz, nil
 	}
@@ -1259,7 +1300,7 @@ func keepKeysChoice(current, rowID string) string {
 }
 
 func keepGitChoice(current, rowID string) string {
-	if rowID == gitChoiceUse || rowID == gitChoiceNew || rowID == gitChoicePath {
+	if rowID == gitChoiceUse || rowID == gitChoiceNew || rowID == gitChoicePath || rowID == gitChoiceNone {
 		return rowID
 	}
 
